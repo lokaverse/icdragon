@@ -68,6 +68,8 @@ module {
         reward : Nat;
         bets : [Bet];
         bonus : Nat;
+        highestRoller : Principal;
+        highestDice : Nat;
 
     };
 
@@ -102,6 +104,10 @@ module {
         #closed;
         #noroll : [Nat];
         #transferFailed : Text;
+        #highest : [Nat8];
+        #absoluteHighest;
+        #highestExtra : [Nat8];
+        #legend;
     };
 
     public type TransferResult = {
@@ -122,6 +128,16 @@ module {
         purchaseHistory : [PaidTicketPurchase];
         gameHistory : [Bet];
         claimableBonus : [GameBonus];
+        availableDiceRoll : Nat;
+    };
+
+    public type UserV2 = {
+        walletAddress : Principal;
+        claimableReward : Nat;
+        claimHistory : [ClaimHistory];
+        purchaseHistory : [PaidTicketPurchase];
+        gameHistory : [Bet];
+        claimableBonus : Nat;
         availableDiceRoll : Nat;
     };
 

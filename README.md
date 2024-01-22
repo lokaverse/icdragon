@@ -71,9 +71,33 @@ record {
  }
 })"
 
+dfx deploy icdragon  --argument "(record{admin = principal \"${MINTER}\"})"
 ```
 
 c. Deploy another EYES token, this time proper name, with ICDragon canister ID as the minter
+
+```bash
+   $ dfx deploy eyes  --argument "(variant {Init =
+record {
+     token_symbol = \"EYES\";
+     token_name = \"EYES\";
+     minting_account = record { owner = principal \"br5f7-7uaaa-aaaaa-qaaca-cai\" };
+     transfer_fee = 10;
+     metadata = vec {};
+     feature_flags = opt record{icrc2 = true};
+     initial_balances = vec { record { record { owner = principal \"br5f7-7uaaa-aaaaa-qaaca-cai\"; }; 1000000000000; }; };
+     archive_options = record {
+         num_blocks_to_archive = 1000;
+         trigger_threshold = 2000;
+         controller_id = principal \"br5f7-7uaaa-aaaaa-qaaca-cai\";
+         cycles_for_archive_creation = opt 10000000000000;
+     };
+ }
+})"
+
+dfx deploy icdragon  --argument "(record{admin = principal \"${MINTER}\"})"
+```
+
 d. Remove dependency to the first temporary EYES token, then update the code on ICDragon and its dependency to the proper EYES token
 e. Upgrade ICDragon 5. Set the ticket Price (optional) 6. Start the first game
 

@@ -57,6 +57,7 @@ shared ({ caller = owner }) actor class ICDragon({
   private stable var eyesDays = 0;
   private stable var initialReward = 500000000;
   private stable var initialBonus = 50000000;
+  private stable var timerId = 0;
   stable var nextTicketPrice = 50000000;
 
   private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
@@ -64,6 +65,7 @@ shared ({ caller = owner }) actor class ICDragon({
   private var userDoubleRollQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userTicketPurchaseHash = HashMap.HashMap<Text, [T.PaidTicketPurchase]>(0, Text.equal, Text.hash);
   private var userClaimableHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userClaimableBonusHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userClaimHistoryHash = HashMap.HashMap<Text, [T.ClaimHistory]>(0, Text.equal, Text.hash);
   private var userBetHistoryHash = HashMap.HashMap<Text, [T.Bet]>(0, Text.equal, Text.hash);
   var bonusPoolbyWallet = HashMap.HashMap<Text, [Nat]>(0, Text.equal, Text.hash);
@@ -77,12 +79,15 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var games_ : [T.Game] = []; // for upgrade
   stable var ticketPurchaseHistory_ : [T.TicketPurchase] = []; // for upgrade
   stable var betHistory_ : [T.Bet] = [];
+  stable var currentHighestDice = 0;
+  stable var currentHighestRoller = admin;
 
   stable var userTicketQuantityHash_ : [(Text, Nat)] = [];
   stable var userFirstHash_ : [(Text, Nat)] = [];
   stable var userDoubleRollQuantityHash_ : [(Text, Nat)] = [];
   stable var userTicketPurchaseHash_ : [(Text, [T.PaidTicketPurchase])] = [];
   stable var userClaimableHash_ : [(Text, Nat)] = [];
+  stable var userClaimableBonusHash_ : [(Text, Nat)] = [];
   stable var userClaimHistoryHash_ : [(Text, [T.ClaimHistory])] = [];
   stable var userBetHistoryHash_ : [(Text, [T.Bet])] = [];
 
@@ -99,6 +104,7 @@ shared ({ caller = owner }) actor class ICDragon({
     userDoubleRollQuantityHash_ := Iter.toArray(userDoubleRollQuantityHash.entries());
     userTicketPurchaseHash_ := Iter.toArray(userTicketPurchaseHash.entries());
     userClaimableHash_ := Iter.toArray(userClaimableHash.entries());
+    userClaimableBonusHash_ := Iter.toArray(userClaimableBonusHash.entries());
     userClaimHistoryHash_ := Iter.toArray(userClaimHistoryHash.entries());
     userBetHistoryHash_ := Iter.toArray(userBetHistoryHash.entries());
     bonusPoolbyWallet_ := Iter.toArray(bonusPoolbyWallet.entries());
@@ -114,62 +120,47 @@ shared ({ caller = owner }) actor class ICDragon({
     userDoubleRollQuantityHash := HashMap.fromIter<Text, Nat>(userDoubleRollQuantityHash_.vals(), 1, Text.equal, Text.hash);
     userTicketPurchaseHash := HashMap.fromIter<Text, [T.PaidTicketPurchase]>(userTicketPurchaseHash_.vals(), 1, Text.equal, Text.hash);
     userClaimableHash := HashMap.fromIter<Text, Nat>(userClaimableHash_.vals(), 1, Text.equal, Text.hash);
+    userClaimableBonusHash := HashMap.fromIter<Text, Nat>(userClaimableBonusHash_.vals(), 1, Text.equal, Text.hash);
     userClaimHistoryHash := HashMap.fromIter<Text, [T.ClaimHistory]>(userClaimHistoryHash_.vals(), 1, Text.equal, Text.hash);
     userBetHistoryHash := HashMap.fromIter<Text, [T.Bet]>(userBetHistoryHash_.vals(), 1, Text.equal, Text.hash);
     bonusPoolbyWallet := HashMap.fromIter<Text, [Nat]>(bonusPoolbyWallet_.vals(), 1, Text.equal, Text.hash);
 
+    // var h = halving();
+
   };
 
   //@dev timers initialization
-  var halving = ignore recurringTimer(
-    #seconds(24 * 60 * 60 * 10),
-    func() : async () {
-      if (eyesToken) {
-        eyesTokenDistribution := eyesTokenDistribution / 2;
+
+  public shared (message) func startHalving() : async Nat {
+    assert (_isAdmin(message.caller));
+    halving();
+  };
+
+  public shared (message) func stopHalving() : async Nat {
+    assert (_isAdmin(message.caller));
+    cancelTimer(timerId);
+    timerId;
+  };
+
+  func halving() : Nat {
+    var n = recurringTimer(
+      #seconds(24 * 60 * 60),
+      func() : async () {
         eyesDays += 1;
-        //if(EyesDays==30)EyesToken:=false;
-      };
-    },
-  );
+        if (eyesToken and eyesDays == 10) {
+          eyesTokenDistribution := eyesTokenDistribution / 2;
+          eyesDays := 0;
+          //if(EyesDays==30)EyesToken:=false;
+        };
+      },
+    );
+    timerId := n;
+    return n;
+  };
 
   public query (message) func getHalving() : async Nat {
     return eyesDays;
   };
-
-  /*public shared (message) func clearData() : async () {
-    assert (_isAdmin(message.caller));
-
-    gameIndex := 0;
-    transactionIndex := 0;
-    firstGameStarted := false;
-    //initialReward = 50000
-    betIndex := 0;
-    ticketIndex := 0;
-    ticketPrice := 500000;
-    eyesToken := false;
-    eyesTokenDistribution := 100_000_000_000;
-    eyesDays := 0;
-
-    games := Buffer.Buffer<T.Game>(0);
-    ticketPurchaseHistory := Buffer.Buffer<T.TicketPurchase>(0);
-    betHistory := Buffer.Buffer<T.Bet>(0);
-
-    userTicketQuantityHash := HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
-    userTicketPurchaseHash := HashMap.HashMap<Text, [T.PaidTicketPurchase]>(0, Text.equal, Text.hash);
-    userClaimableHash := HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
-    userClaimHistoryHash := HashMap.HashMap<Text, [T.ClaimHistory]>(0, Text.equal, Text.hash);
-    userBetHistoryHash := HashMap.HashMap<Text, [T.Bet]>(0, Text.equal, Text.hash);
-    userFirstHash := HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
-    userDoubleRollQuantityHash := HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
-    bonusPoolbyWallet := HashMap.HashMap<Text, [Nat]>(0, Text.equal, Text.hash);
-
-  }; */
-
-  /*public shared (message) func withdrawICP(amount_ : Nat, p_ : Principal) : async Bool {
-    assert (_isAdmin(message.caller));
-    let res = transfer(amount_, p_);
-    true;
-  }; */
 
   private func natToFloat(nat_ : Nat) : Float {
     let toNat64_ = Nat64.fromNat(nat_);
@@ -233,15 +224,9 @@ shared ({ caller = owner }) actor class ICDragon({
   public shared (message) func setTicketPrice(price_ : Nat) : async Nat {
     assert (_isAdmin(message.caller));
     ticketPrice := price_;
+    nextTicketPrice := price_;
     ticketPrice;
   };
-
-  /*public shared (message) func setRebaseReward() : async Nat {
-    assert (_isAdmin(message.caller));
-    let game_ = games.get(gameIndex);
-    game_.reward := ticketPrice * 10;
-    game_.reward;
-  };*/
 
   public query (message) func getCurrentReward() : async Nat {
     //assert (_isAdmin(message.caller));
@@ -249,10 +234,10 @@ shared ({ caller = owner }) actor class ICDragon({
     game_.reward;
   };
 
-  public shared (message) func setEyesDistribution(initAmount_ : Nat) : async Nat {
-    assert (_isAdmin(message.caller));
-    eyesTokenDistribution := initAmount_;
-    initAmount_;
+  public query (message) func getCurrentBonus() : async Nat {
+    //assert (_isAdmin(message.caller));
+    let game_ = games.get(gameIndex);
+    game_.bonus;
   };
 
   public query (message) func getEyesDistribution() : async Nat {
@@ -275,7 +260,7 @@ shared ({ caller = owner }) actor class ICDragon({
     gameIndex;
   };
 
-  public shared (message) func getUserData() : async T.User {
+  public shared (message) func getUserData() : async T.UserV2 {
     var claimHistory_ = userClaimHistoryHash.get(Principal.toText(message.caller));
     var claimHistory : [T.ClaimHistory] = [];
     switch (claimHistory_) {
@@ -337,14 +322,25 @@ shared ({ caller = owner }) actor class ICDragon({
       };
     };
 
-    let userData_ : T.User = {
+    var bonusReward_ = 0;
+    let userReward_ = userClaimableHash.get(Principal.toText(message.caller));
+    switch (userReward_) {
+      case (?r) {
+        bonusReward_ := r;
+      };
+      case (null) {
+        userClaimableHash.put(Principal.toText(message.caller), 0);
+      };
+    };
+
+    let userData_ : T.UserV2 = {
       walletAddress = message.caller;
       claimableReward = claimable;
       claimHistory = claimHistory;
       purchaseHistory = purchase;
       gameHistory = bets;
       availableDiceRoll = remaining + doubleRollRemaining;
-      claimableBonus = await checkBonusPool(message.caller);
+      claimableBonus = bonusReward_;
     };
     //return user data
     userData_;
@@ -380,6 +376,8 @@ shared ({ caller = owner }) actor class ICDragon({
       time_ended = currentGame_.time_ended;
       winner = currentGame_.winner;
       bonus = currentGame_.bonus;
+      highestRoller = currentHighestRoller;
+      highestDice = currentHighestDice;
     };
     [];
   };
@@ -399,6 +397,8 @@ shared ({ caller = owner }) actor class ICDragon({
       time_ended = currentGame_.time_ended;
       winner = currentGame_.winner;
       bonus = currentGame_.bonus;
+      highestRoller = currentHighestRoller;
+      highestDice = currentHighestDice;
     };
     #ok(game_);
   };
@@ -472,7 +472,7 @@ shared ({ caller = owner }) actor class ICDragon({
     assert (_isAdmin(message.caller));
     ticketPrice := 500000;
     initialReward := ticketPrice * 10;
-    initialBonus := ticketPrice;
+    initialBonus := ticketPrice * 2;
 
     assert (gameIndex == 0);
     assert (firstGameStarted == false);
@@ -498,6 +498,8 @@ shared ({ caller = owner }) actor class ICDragon({
   func startNewGame() {
     gameIndex += 1;
     ticketPrice := nextTicketPrice;
+    currentHighestRoller := siteAdmin;
+    currentHighestDice := 0;
     let newGame : T.Game = {
       id = gameIndex;
       var totalBet = 0;
@@ -506,7 +508,7 @@ shared ({ caller = owner }) actor class ICDragon({
       var time_ended = 0;
       var reward = ticketPrice * 10;
       var bets = [];
-      var bonus = initialBonus;
+      var bonus = ticketPrice * 2;
       var bonus_winner = siteAdmin;
       var bonus_claimed = false;
     };
@@ -616,7 +618,12 @@ shared ({ caller = owner }) actor class ICDragon({
 
     var dice_1_ = await roll();
     var dice_2_ = await roll();
-
+    let totalDice_ = dice_1_ + dice_2_;
+    let isHighest_ = (Nat8.toNat(totalDice_) > currentHighestDice);
+    if (isHighest_) {
+      currentHighestRoller := message.caller;
+      currentHighestDice := Nat8.toNat(totalDice_);
+    };
     //dice_1_ := 1;
     //dice_2_ := 1;
 
@@ -659,9 +666,21 @@ shared ({ caller = owner }) actor class ICDragon({
           userClaimableHash.put(Principal.toText(message.caller), game_.reward);
         };
       };
+      let bonusReward_ = userClaimableBonusHash.get(Principal.toText(currentHighestRoller));
+      switch (bonusReward_) {
+        case (?b) {
+          userClaimableBonusHash.put(Principal.toText(currentHighestRoller), b + game_.bonus);
+        };
+        case (null) {
+          userClaimableBonusHash.put(Principal.toText(currentHighestRoller), game_.bonus);
+        };
+      };
       game_.winner := message.caller;
+      game_.bonus_winner := currentHighestRoller;
+
       game_.time_ended := now();
       startNewGame();
+      if (isHighest_) { return #legend };
       return #win;
     };
     //return if lost and detect if win extra roll
@@ -683,9 +702,13 @@ shared ({ caller = owner }) actor class ICDragon({
       };
       if (dice_1_ == dice_2_) {
         userDoubleRollQuantityHash.put(Principal.toText(message.caller), doubleRollRemaining_ +1);
+        if (isHighest_ and dice_1_ == 6) return #absoluteHighest;
+        if (isHighest_) return #highestExtra([dice_1_, dice_2_]);
         return #extra([dice_1_, dice_2_]);
       };
     };
+    if (isHighest_) return #highest([dice_1_, dice_2_]);
+
     #lose([dice_1_, dice_2_]);
 
   };
@@ -736,7 +759,18 @@ shared ({ caller = owner }) actor class ICDragon({
 
   public shared (message) func claimBonusPool(g_ : Nat, p_ : Principal) : async Bool {
     //
-    let gameArray_ = bonusPoolbyWallet.get(Principal.toText(message.caller));
+    var bonusReward_ = 0;
+    let userReward_ = userClaimableHash.get(Principal.toText(message.caller));
+    switch (userReward_) {
+      case (?r) {
+        bonusReward_ := r;
+      };
+      case (null) {
+        return false;
+      };
+    };
+    //let game_ = games.get(g_);
+    /*let gameArray_ = bonusPoolbyWallet.get(Principal.toText(message.caller));
     switch (gameArray_) {
       case (?r) {
         let val_ = Array.find<Nat>(r, func x = x == g_);
@@ -777,7 +811,7 @@ shared ({ caller = owner }) actor class ICDragon({
       case (null) {
         return false;
       };
-    };
+    };*/
     false;
   };
 
