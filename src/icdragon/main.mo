@@ -136,12 +136,6 @@ shared ({ caller = owner }) actor class ICDragon({
     halving();
   };
 
-  public shared (message) func stopHalving() : async Nat {
-    assert (_isAdmin(message.caller));
-    cancelTimer(timerId);
-    timerId;
-  };
-
   func halving() : Nat {
     var n = recurringTimer(
       #seconds(24 * 60 * 60),
