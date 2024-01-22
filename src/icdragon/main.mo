@@ -90,7 +90,7 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var userClaimableBonusHash_ : [(Text, Nat)] = [];
   stable var userClaimHistoryHash_ : [(Text, [T.ClaimHistory])] = [];
   stable var userBetHistoryHash_ : [(Text, [T.Bet])] = [];
-
+  stable var timerStarted = false;
   stable var bonusPoolbyWallet_ : [(Text, [Nat])] = [];
   //stable var transactionHash
 
@@ -98,6 +98,7 @@ shared ({ caller = owner }) actor class ICDragon({
     games_ := Buffer.toArray<T.Game>(games);
     ticketPurchaseHistory_ := Buffer.toArray<T.TicketPurchase>(ticketPurchaseHistory);
     betHistory_ := Buffer.toArray<T.Bet>(betHistory);
+    timerStarted := false;
 
     userTicketQuantityHash_ := Iter.toArray(userTicketQuantityHash.entries());
     userFirstHash_ := Iter.toArray(userFirstHash.entries());
@@ -125,17 +126,14 @@ shared ({ caller = owner }) actor class ICDragon({
     userBetHistoryHash := HashMap.fromIter<Text, [T.Bet]>(userBetHistoryHash_.vals(), 1, Text.equal, Text.hash);
     bonusPoolbyWallet := HashMap.fromIter<Text, [Nat]>(bonusPoolbyWallet_.vals(), 1, Text.equal, Text.hash);
 
-    // var h = halving();
-
   };
 
-  //@dev timers initialization
-
+  //@dev timers initialization, must be called every canister upgrades
   public shared (message) func startHalving() : async Nat {
     assert (_isAdmin(message.caller));
     halving();
   };
-
+  //timer : halving every 10 days
   func halving() : Nat {
     var n = recurringTimer(
       #seconds(24 * 60 * 60),
@@ -148,12 +146,17 @@ shared ({ caller = owner }) actor class ICDragon({
         };
       },
     );
+    timerStarted := true;
     timerId := n;
     return n;
   };
 
   public query (message) func getHalving() : async Nat {
     return eyesDays;
+  };
+
+  public query (message) func getTimerStatus() : async Bool {
+    return timerStarted;
   };
 
   private func natToFloat(nat_ : Nat) : Float {
@@ -618,8 +621,6 @@ shared ({ caller = owner }) actor class ICDragon({
       currentHighestRoller := message.caller;
       currentHighestDice := Nat8.toNat(totalDice_);
     };
-    //dice_1_ := 1;
-    //dice_2_ := 1;
 
     //check if Token started, mint Eyes to address based on emission halving
     if (eyesToken) {
