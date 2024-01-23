@@ -69,6 +69,7 @@ shared ({ caller = owner }) actor class ICDragon({
   private var userClaimHistoryHash = HashMap.HashMap<Text, [T.ClaimHistory]>(0, Text.equal, Text.hash);
   private var userBetHistoryHash = HashMap.HashMap<Text, [T.Bet]>(0, Text.equal, Text.hash);
   var bonusPoolbyWallet = HashMap.HashMap<Text, [Nat]>(0, Text.equal, Text.hash);
+  private var blistHash = HashMap.HashMap<Text, Bool>(0, Text.equal, Text.hash);
 
   //@dev--variables and history
   var games = Buffer.Buffer<T.Game>(0);
@@ -83,6 +84,7 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var currentHighestRoller = admin;
 
   stable var userTicketQuantityHash_ : [(Text, Nat)] = [];
+  stable var blistHash_ : [(Text, Bool)] = [];
   stable var userFirstHash_ : [(Text, Nat)] = [];
   stable var userDoubleRollQuantityHash_ : [(Text, Nat)] = [];
   stable var userTicketPurchaseHash_ : [(Text, [T.PaidTicketPurchase])] = [];
@@ -92,6 +94,7 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var userBetHistoryHash_ : [(Text, [T.Bet])] = [];
   stable var timerStarted = false;
   stable var bonusPoolbyWallet_ : [(Text, [Nat])] = [];
+
   //stable var transactionHash
 
   system func preupgrade() {
@@ -109,6 +112,7 @@ shared ({ caller = owner }) actor class ICDragon({
     userClaimHistoryHash_ := Iter.toArray(userClaimHistoryHash.entries());
     userBetHistoryHash_ := Iter.toArray(userBetHistoryHash.entries());
     bonusPoolbyWallet_ := Iter.toArray(bonusPoolbyWallet.entries());
+    blistHash_ := Iter.toArray(blistHash.entries());
 
   };
   system func postupgrade() {
@@ -125,6 +129,7 @@ shared ({ caller = owner }) actor class ICDragon({
     userClaimHistoryHash := HashMap.fromIter<Text, [T.ClaimHistory]>(userClaimHistoryHash_.vals(), 1, Text.equal, Text.hash);
     userBetHistoryHash := HashMap.fromIter<Text, [T.Bet]>(userBetHistoryHash_.vals(), 1, Text.equal, Text.hash);
     bonusPoolbyWallet := HashMap.fromIter<Text, [Nat]>(bonusPoolbyWallet_.vals(), 1, Text.equal, Text.hash);
+    blistHash := HashMap.fromIter<Text, Bool>(blistHash_.vals(), 1, Text.equal, Text.hash);
 
   };
 
@@ -151,7 +156,24 @@ shared ({ caller = owner }) actor class ICDragon({
     return n;
   };
 
+  public query (message) func blacklist(p : Text) : async Bool {
+    assert (_isAdmin(message.caller));
+    blistHash.put(p, true);
+    true;
+  };
+
+  public query (message) func getUserTicketList() : async [(Text, Nat)] {
+    assert (_isAdmin(message.caller));
+    return Iter.toArray(userTicketQuantityHash.entries());
+  };
+
   public query (message) func getHalving() : async Nat {
+    return eyesDays;
+  };
+
+  public shared (message) func setHalving(d : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
+    eyesDays := d;
     return eyesDays;
   };
 
@@ -407,11 +429,11 @@ shared ({ caller = owner }) actor class ICDragon({
   };
 
   //@dev--to buy ticket, user should call approve function on icrc2
-  public shared (message) func buy_ticket(quantity_ : Nat, ticketPrice : Nat, totalPrice_ : Nat) : async T.BookTicketResult {
+  public shared (message) func buy_ticket(quantity_ : Nat, ticket_Price_ : Nat, totalPrice_ : Nat) : async T.BookTicketResult {
     //set teh variable
-
+    assert (_isNotBlacklisted(message.caller));
     //Pay by calling icrc2 transfer from
-    let transferRes_ = await transferFrom(message.caller, totalPrice_);
+    let transferRes_ = await transferFrom(message.caller, quantity_ * ticketPrice);
     var transIndex_ = 0;
     switch transferRes_ {
       case (#success(x)) { transIndex_ := x };
@@ -427,7 +449,7 @@ shared ({ caller = owner }) actor class ICDragon({
       walletAddress = ?message.caller;
       time = now();
       quantity = quantity_;
-      totalPrice = totalPrice_;
+      totalPrice = quantity_ * ticketPrice;
       var icp_index = transIndex_;
     };
     let ticketBookPaid_ : T.PaidTicketPurchase = {
@@ -435,7 +457,7 @@ shared ({ caller = owner }) actor class ICDragon({
       walletAddress = ?message.caller;
       time = now();
       quantity = quantity_;
-      totalPrice = totalPrice_;
+      totalPrice = quantity_ * ticketPrice;
       icp_index = transIndex_;
     };
     ticketPurchaseHistory.add(ticketBook_);
@@ -551,9 +573,28 @@ shared ({ caller = owner }) actor class ICDragon({
     };
     1;
   };
+  func _isBlacklisted(p : Principal) : Bool {
+    switch (blistHash.get(Principal.toText(p))) {
+      case (?a) {
+        return a;
+      };
+      case (null) {
+        return false;
+      };
+    };
+  };
+
+  func _isNotBlacklisted(p : Principal) : Bool {
+    if (_isBlacklisted(p)) {
+      return false;
+    } else {
+      return true;
+    };
+  };
 
   public shared (message) func roll_dice(game_id : Nat) : async T.DiceResult {
-    //get game data
+    //get game dataassert
+    assert (_isNotBlacklisted(message.caller));
     let game_ = games.get(game_id);
     let gameBets_ = game_.bets;
     var remaining_ : Nat = 0;
