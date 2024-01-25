@@ -536,16 +536,47 @@ shared ({ caller = owner }) actor class ICDragon({
   };
 
   func roll() : async Nat8 {
-    let random = Random.Finite(await Random.blob());
-    let dice_ = random.range(20);
-    switch (dice_) {
-      case (?x) {
-        return Nat8.rem(Nat8.fromNat(x), 6) +1;
-      };
-      case (null) {
-        return 0;
+    var count_ = 0;
+    var check : Nat8 = 0;
+    while (check == 0 and count_ < 5) {
+      let random = Random.Finite(await Random.blob());
+      let dice_ = random.range(20);
+      switch (dice_) {
+        case (?x) {
+          var r_ = Nat.rem(x, 6) +1;
+          check := 1;
+          return Nat8.fromNat(r_);
+        };
+        case (null) {
+          count_ += 1;
+          //return 0;
+        };
       };
     };
+    return 6;
+  };
+
+  public shared (message) func testRoll() : async Nat8 {
+    assert (_isAdmin(message.caller));
+    var count_ = 0;
+    var check : Nat8 = 0;
+    while (check == 0 and count_ < 5) {
+      let random = Random.Finite(await Random.blob());
+      let dice_ = random.range(20);
+      switch (dice_) {
+        case (?x) {
+          var r_ = Nat.rem(x, 6) +1;
+          check := 1;
+          return Nat8.fromNat(r_);
+        };
+        case (null) {
+          count_ += 1;
+          //return 0;
+        };
+      };
+    };
+    return 0;
+
   };
 
   public query (message) func getHashDoubleRoll(t : Text) : async ?Nat {
