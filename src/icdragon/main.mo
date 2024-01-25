@@ -543,7 +543,7 @@ shared ({ caller = owner }) actor class ICDragon({
         return x +1;
       };
       case (null) {
-        return 2;
+        return 0;
       };
     };
   };
@@ -772,10 +772,10 @@ shared ({ caller = owner }) actor class ICDragon({
             let claimArray_ = userClaimHistoryHash.get(Principal.toText(message.caller));
             switch (claimArray_) {
               case (?c) {
-                //userClaimHistoryHash.put(Principal.toText(message.caller), Array.append<T.ClaimHistory>(c, [claimHistory_]));
+                userClaimHistoryHash.put(Principal.toText(message.caller), Array.append<T.ClaimHistory>(c, [claimHistory_]));
               };
               case (null) {
-                //userClaimHistoryHash.put(Principal.toText(message.caller), [claimHistory_]);
+                userClaimHistoryHash.put(Principal.toText(message.caller), [claimHistory_]);
               };
             };
             return true;
@@ -794,60 +794,42 @@ shared ({ caller = owner }) actor class ICDragon({
   };
 
   public shared (message) func claimBonusPool(g_ : Nat, p_ : Principal) : async Bool {
-    //
-    var bonusReward_ = 0;
-    let userReward_ = userClaimableHash.get(Principal.toText(message.caller));
-    switch (userReward_) {
+    let reward_ = userClaimableBonusHash.get(Principal.toText(message.caller));
+
+    switch (reward_) {
       case (?r) {
-        bonusReward_ := r;
+        if (r < 10000) return false;
+        let transferResult_ = await transfer(r -10000, message.caller);
+        switch transferResult_ {
+          case (#success(x)) {
+            userClaimableBonusHash.put(Principal.toText(message.caller), 0);
+
+            let claimHistory_ : T.ClaimHistory = {
+              time = now();
+              icp_transfer_index = x;
+              reward_claimed = r;
+            };
+            let claimArray_ = userClaimHistoryHash.get(Principal.toText(message.caller));
+            switch (claimArray_) {
+              case (?c) {
+                userClaimHistoryHash.put(Principal.toText(message.caller), Array.append<T.ClaimHistory>(c, [claimHistory_]));
+              };
+              case (null) {
+                userClaimHistoryHash.put(Principal.toText(message.caller), [claimHistory_]);
+              };
+            };
+            return true;
+          };
+          case (#error(txt)) {
+            Debug.print("error " #txt);
+            return false;
+          };
+        };
       };
       case (null) {
         return false;
       };
     };
-    //let game_ = games.get(g_);
-    /*let gameArray_ = bonusPoolbyWallet.get(Principal.toText(message.caller));
-    switch (gameArray_) {
-      case (?r) {
-        let val_ = Array.find<Nat>(r, func x = x == g_);
-        if (val_ != null) {
-          let game_ = games.get(g_);
-          game_.bonus_claimed := true;
-          let transferResult_ = await transfer(game_.bonus -10000, message.caller);
-          switch transferResult_ {
-            case (#success(x)) {
-              userClaimableHash.put(Principal.toText(message.caller), 0);
-
-              game_.bonus_winner := message.caller;
-              let claimHistory_ : T.ClaimHistory = {
-                time = now();
-                icp_transfer_index = x;
-                reward_claimed = game_.bonus;
-              };
-              let claimArray_ = userClaimHistoryHash.get(Principal.toText(message.caller));
-              switch (claimArray_) {
-                case (?c) {
-                  userClaimHistoryHash.put(Principal.toText(message.caller), Array.append<T.ClaimHistory>(c, [claimHistory_]));
-                };
-                case (null) {
-                  userClaimHistoryHash.put(Principal.toText(message.caller), [claimHistory_]);
-                };
-              };
-              return true;
-            };
-            case (#error(txt)) {
-              Debug.print("error " #txt);
-              game_.bonus_claimed := false;
-              return false;
-            };
-          };
-        };
-
-      };
-      case (null) {
-        return false;
-      };
-    };*/
     false;
   };
 
