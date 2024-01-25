@@ -59,6 +59,8 @@ shared ({ caller = owner }) actor class ICDragon({
   private stable var initialBonus = 50000000;
   private stable var timerId = 0;
   stable var nextTicketPrice = 50000000;
+  private stable var startHalvingTimeStamp : Int = 0;
+  private stable var nextHalvingTimeStamp : Int = 0;
 
   private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userFirstHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
@@ -82,6 +84,7 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var betHistory_ : [T.Bet] = [];
   stable var currentHighestDice = 0;
   stable var currentHighestRoller = admin;
+  stable var counter = 0;
 
   stable var userTicketQuantityHash_ : [(Text, Nat)] = [];
   stable var blistHash_ : [(Text, Bool)] = [];
@@ -133,9 +136,52 @@ shared ({ caller = owner }) actor class ICDragon({
 
   };
 
-  //@dev timers initialization, must be called every canister upgrades
-  public shared (message) func startHalving() : async Nat {
+  public query (message) func getTimeNow() : async Int {
     assert (_isAdmin(message.caller));
+    let tm = now() / 1000000;
+    return tm;
+  };
+
+  public query (message) func getCounter() : async Nat {
+    assert (_isAdmin(message.caller));
+    return counter;
+  };
+
+  public query (message) func getNextHalving() : async Int {
+    return nextHalvingTimeStamp;
+  };
+
+  public shared (message) func alterHalving(a : Int) : async Int {
+    assert (_isAdmin(message.caller));
+    nextHalvingTimeStamp := a;
+    return nextHalvingTimeStamp;
+  };
+  //@dev timers initialization, must be called every canister upgrades
+  public shared (message) func startHalving(n : Int) : async Nat {
+
+    assert (_isAdmin(message.caller));
+    cancelTimer(timerId);
+    startHalvingTimeStamp := n;
+    nextHalvingTimeStamp := startHalvingTimeStamp;
+    // Debug.print("stamp " #Int.toText(nextTimeStamp));
+    if (startHalvingTimeStamp == 0) return 0;
+    timerId := recurringTimer(
+      #seconds(10),
+      func() : async () {
+        if (counter < 100) { counter += 10 } else { counter := 0 };
+        let time_ = now() / 1000000;
+        if (time_ >= startHalvingTimeStamp) {
+          counter := 200;
+          let res = halving();
+
+          //schedulerSecondsInterval := 24 * 60 * 60;
+          cancelTimer(timerId);
+          timerId := halving();
+
+        };
+      },
+    );
+
     halving();
   };
   //timer : halving every 10 days
@@ -143,17 +189,23 @@ shared ({ caller = owner }) actor class ICDragon({
     var n = recurringTimer(
       #seconds(24 * 60 * 60),
       func() : async () {
-        eyesDays += 1;
-        if (eyesToken and eyesDays == 10) {
-          eyesTokenDistribution := eyesTokenDistribution / 2;
-          eyesDays := 0;
-          //if(EyesDays==30)EyesToken:=false;
-        };
+        if (counter < 300) { counter += 1 } else { counter := 0 };
+        halvingExecution();
       },
     );
     timerStarted := true;
     timerId := n;
     return n;
+  };
+
+  func halvingExecution() {
+    eyesDays += 1;
+    if (eyesToken and eyesDays == 10) {
+      eyesTokenDistribution := eyesTokenDistribution / 2;
+      eyesDays := 0;
+      nextHalvingTimeStamp := nextHalvingTimeStamp + (24 * 60 * 60 * 10);
+      //if(EyesDays==30)EyesToken:=false;
+    };
   };
 
   public query (message) func blacklist(p : Text) : async Bool {
@@ -405,6 +457,27 @@ shared ({ caller = owner }) actor class ICDragon({
     //return game data
     if (firstGameStarted == false) return #none;
     let currentGame_ = games.get(gameIndex);
+    Debug.print("current game reward " #Nat.toText(currentGame_.reward));
+
+    let game_ : T.CurrentGame = {
+      bets = currentGame_.bets;
+      id = currentGame_.id;
+      reward = currentGame_.reward;
+      reward_text = Nat.toText(currentGame_.reward);
+      time_created = currentGame_.time_created;
+      time_ended = currentGame_.time_ended;
+      winner = currentGame_.winner;
+      bonus = currentGame_.bonus;
+      highestRoller = currentHighestRoller;
+      highestDice = currentHighestDice;
+    };
+    #ok(game_);
+  };
+
+  public query (message) func getGameByIndex(id_ : Nat) : async T.GameCheck {
+    //return game data
+    if (firstGameStarted == false) return #none;
+    let currentGame_ = games.get(id_);
     Debug.print("current game reward " #Nat.toText(currentGame_.reward));
 
     let game_ : T.CurrentGame = {
@@ -684,9 +757,11 @@ shared ({ caller = owner }) actor class ICDragon({
       userDoubleRollQuantityHash.put(Principal.toText(message.caller), doubleRollRemaining_ -1);
     };
     //ROLL!==============================================================================================
-
+    var isZero = false;
     var dice_1_ = await roll();
+    if (dice_1_ == 0) isZero := true;
     var dice_2_ = await roll();
+    if (dice_2_ == 0) isZero := true;
     let totalDice_ = dice_1_ + dice_2_;
     let isHighest_ = (Nat8.toNat(totalDice_) > currentHighestDice);
     if (isHighest_) {
