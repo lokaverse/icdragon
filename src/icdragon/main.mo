@@ -514,6 +514,32 @@ shared ({ caller = owner }) actor class ICDragon({
     true;
   };
 
+  public shared (message) func testRoll() : async Nat {
+    let random = Random.Finite(await Random.blob());
+    let dice_ = random.range(20);
+    switch (dice_) {
+      case (?x) {
+        return Nat.rem(x, 6) +1;
+      };
+      case (null) {
+        return 0;
+      };
+    };
+  };
+
+  func uniformDist() : async Nat {
+    let random = Random.Finite(await Random.blob());
+    let dice_ = random.range(20);
+    switch (dice_) {
+      case (?x) {
+        return Nat.rem(x, 6) +1;
+      };
+      case (null) {
+        return 0;
+      };
+    };
+  };
+
   func startNewGame() {
     gameIndex += 1;
     ticketPrice := nextTicketPrice;
@@ -537,10 +563,10 @@ shared ({ caller = owner }) actor class ICDragon({
 
   func roll() : async Nat8 {
     let random = Random.Finite(await Random.blob());
-    let dice_ = random.binomial(5);
+    let dice_ = random.range(20);
     switch (dice_) {
       case (?x) {
-        return x +1;
+        return Nat8.rem(Nat8.fromNat(x), 6) +1;
       };
       case (null) {
         return 0;
