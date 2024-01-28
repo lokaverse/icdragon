@@ -142,6 +142,12 @@ shared ({ caller = owner }) actor class ICDragon({
     return tm;
   };
 
+  public query (message) func getTicketPurchaseHash() : async [(Text, [T.PaidTicketPurchase])] {
+    //assert (_isAdmin(message.caller));
+    let a_ = Iter.toArray(userTicketPurchaseHash.entries());
+    return a_;
+  };
+
   public query (message) func getCounter() : async Nat {
     assert (_isAdmin(message.caller));
     return counter;
@@ -203,7 +209,7 @@ shared ({ caller = owner }) actor class ICDragon({
     if (eyesToken and eyesDays == 10) {
       eyesTokenDistribution := eyesTokenDistribution / 2;
       eyesDays := 0;
-      nextHalvingTimeStamp := nextHalvingTimeStamp + (24 * 60 * 60 * 10);
+      nextHalvingTimeStamp := nextHalvingTimeStamp + (24 * 60 * 60 * 10 * 1000);
       //if(EyesDays==30)EyesToken:=false;
     };
   };
@@ -331,6 +337,92 @@ shared ({ caller = owner }) actor class ICDragon({
     gameIndex;
   };
 
+  func getUserDataByWallet(p_ : Text) : async T.UserV2 {
+    var claimHistory_ = userClaimHistoryHash.get(p_);
+    var claimHistory : [T.ClaimHistory] = [];
+    switch (claimHistory_) {
+      case (?c) {
+        claimHistory := c;
+      };
+      case (null) {
+        claimHistory := [];
+      };
+    };
+    var claimable_ = userClaimableHash.get(p_);
+    var claimable : Nat = 0;
+    switch (claimable_) {
+      case (?c) {
+        claimable := c;
+      };
+      case (null) {
+        claimable := 0;
+      };
+    };
+    var purchase_ = userTicketPurchaseHash.get(p_);
+    var purchase : [T.PaidTicketPurchase] = [];
+    switch (purchase_) {
+      case (?p) {
+        purchase := p;
+      };
+      case (null) {
+        //Debug.print("no purchase yet");
+      };
+    };
+    var bets_ = userBetHistoryHash.get(p_);
+    var bets : [T.Bet] = [];
+    switch (bets_) {
+      case (?b) {
+        bets := b;
+      };
+      case (null) {
+        //Debug.print("no bet yet");
+      };
+    };
+    var remaining : Nat = 0;
+    switch (userTicketQuantityHash.get(p_)) {
+      case (?x) {
+        remaining := x;
+      };
+      case (null) {
+        remaining := 0;
+        userTicketQuantityHash.put(p_, 0);
+      };
+    };
+    var doubleRollRemaining : Nat = 0;
+    switch (userDoubleRollQuantityHash.get(p_)) {
+      case (?x) {
+        doubleRollRemaining := x;
+      };
+      case (null) {
+        doubleRollRemaining := 0;
+        userDoubleRollQuantityHash.put(p_, 0);
+      };
+    };
+
+    var bonusReward_ = 0;
+    let userReward_ = userClaimableBonusHash.get(p_);
+    switch (userReward_) {
+      case (?r) {
+        bonusReward_ := r;
+      };
+      case (null) {
+        userClaimableBonusHash.put(p_, 0);
+      };
+    };
+
+    let userData_ : T.UserV2 = {
+      walletAddress = Principal.fromText(p_);
+      claimableReward = claimable;
+      claimHistory = claimHistory;
+      purchaseHistory = purchase;
+      gameHistory = bets;
+      availableDiceRoll = remaining + doubleRollRemaining;
+      claimableBonus = bonusReward_;
+    };
+    //return user data
+    userData_;
+  };
+
   public shared (message) func getUserData() : async T.UserV2 {
     var claimHistory_ = userClaimHistoryHash.get(Principal.toText(message.caller));
     var claimHistory : [T.ClaimHistory] = [];
@@ -394,13 +486,13 @@ shared ({ caller = owner }) actor class ICDragon({
     };
 
     var bonusReward_ = 0;
-    let userReward_ = userClaimableHash.get(Principal.toText(message.caller));
+    let userReward_ = userClaimableBonusHash.get(Principal.toText(message.caller));
     switch (userReward_) {
       case (?r) {
         bonusReward_ := r;
       };
       case (null) {
-        userClaimableHash.put(Principal.toText(message.caller), 0);
+        userClaimableBonusHash.put(Principal.toText(message.caller), 0);
       };
     };
 
@@ -417,40 +509,20 @@ shared ({ caller = owner }) actor class ICDragon({
     userData_;
   };
 
-  public query (message) func checkBonusPool(p_ : Principal) : async [T.GameBonus] {
+  public query (message) func checkBonusPool(p_ : Principal) : async Nat {
     //return game data
     let listGameBonusId_ = bonusPoolbyWallet.get(Principal.toText(p_));
-    var gameBonus_ : [T.GameBonus] = [];
-    switch (listGameBonusId_) {
-      case (?n) {
-        for (i in n.vals()) {
-          let game_ = games.get(i);
-          if (game_.bonus_claimed == false and game_.time_ended > 0) {
-            let bonus_ : T.GameBonus = { id = i; bonus = game_.bonus };
-            gameBonus_ := Array.append<T.GameBonus>(gameBonus_, [bonus_]);
-          };
-        };
-        return gameBonus_;
+    let bon = userClaimableBonusHash.get(Principal.toText(p_));
+    switch (bon) {
+
+      case (?x) {
+        return x;
       };
       case (null) {
-        return [];
+        return 0;
       };
     };
 
-    let currentGame_ = games.get(gameIndex);
-    let game_ : T.CurrentGame = {
-      bets = currentGame_.bets;
-      id = currentGame_.id;
-      reward = currentGame_.reward;
-      reward_text = Nat.toText(currentGame_.reward);
-      time_created = currentGame_.time_created;
-      time_ended = currentGame_.time_ended;
-      winner = currentGame_.winner;
-      bonus = currentGame_.bonus;
-      highestRoller = currentHighestRoller;
-      highestDice = currentHighestDice;
-    };
-    [];
   };
 
   public query (message) func getCurrentGame() : async T.GameCheck {
@@ -555,6 +627,10 @@ shared ({ caller = owner }) actor class ICDragon({
         userTicketQuantityHash.put(Principal.toText(message.caller), quantity_);
       };
     };
+    if (quantity_ >= 5) {
+      var n = await notifyDiscord("Here comes " #Principal.toText(message.caller) # " with " #Nat.toText(quantity_) # " ticket(s)!%0AGo get that Dragon Eyes, warrior!!");
+
+    };
 
     #success(quantity_);
   };
@@ -564,7 +640,7 @@ shared ({ caller = owner }) actor class ICDragon({
     assert (_isAdmin(message.caller));
     ticketPrice := 500000;
     initialReward := ticketPrice * 10;
-    initialBonus := ticketPrice * 2;
+    initialBonus := ticketPrice;
 
     assert (gameIndex == 0);
     assert (firstGameStarted == false);
@@ -591,6 +667,7 @@ shared ({ caller = owner }) actor class ICDragon({
     gameIndex += 1;
     ticketPrice := nextTicketPrice;
     currentHighestRoller := siteAdmin;
+    initialReward := ticketPrice * 10;
     currentHighestDice := 0;
     let newGame : T.Game = {
       id = gameIndex;
@@ -598,9 +675,9 @@ shared ({ caller = owner }) actor class ICDragon({
       var winner = siteAdmin;
       time_created = now();
       var time_ended = 0;
-      var reward = ticketPrice * 10;
+      var reward = initialReward;
       var bets = [];
-      var bonus = ticketPrice * 2;
+      var bonus = ticketPrice;
       var bonus_winner = siteAdmin;
       var bonus_claimed = false;
     };
@@ -658,6 +735,25 @@ shared ({ caller = owner }) actor class ICDragon({
 
   public query (message) func getHashTicket(t : Text) : async ?Nat {
     return let u = userTicketQuantityHash.get(t);
+  };
+
+  public shared (message) func sendToDiscord(msg : Text) : async Bool {
+    assert (_isAdmin(message.caller));
+    let id_ = Int.toText(now());
+    let message_ = Text.replace(msg, #char ' ', "%20");
+    let url = "https://api.lokamining.com/sendDiscord?id=" #id_ # "&message=" #message_;
+
+    let decoded_text = await send_http(url);
+    true;
+  };
+
+  func notifyDiscord(msg : Text) : async Bool {
+    let id_ = Int.toText(now());
+    let message = Text.replace(msg, #char ' ', "%20");
+    let url = "https://api.lokamining.com/sendDiscord?id=" #id_ # "&message=" #message;
+
+    let decoded_text = await send_http(url);
+    true;
   };
 
   public shared (message) func initialEyesTokenCheck() : async Nat {
@@ -821,15 +917,31 @@ shared ({ caller = owner }) actor class ICDragon({
       game_.bonus_winner := currentHighestRoller;
 
       game_.time_ended := now();
+      var currentBonus_ : Float = natToFloat(game_.bonus) / 100000000;
+      var cB_ = Float.toText(currentBonus_);
+      var currentReward_ : Float = natToFloat(game_.reward) / 100000000;
+      var cR_ = Float.toText(currentReward_);
       startNewGame();
-      if (isHighest_) { return #legend };
+      if (isHighest_) {
+        var n = await notifyDiscord("WINNER!! A legendary warrior has appeared!%0ABoth Dragon Chest AND the Dwarf's bonus have been obtained!%0A" #Principal.toText(message.caller) # " has just won the Dragon's Chest worth " #cR_ # " ICP%0AAnd also won the Dwarf's bonus worth " #cB_ # " ICP!%0AGame is now restarting");
+        return #legend;
+      };
+      var n = await notifyDiscord("WINNER!! The King has obtained the Dragon Eyes!!%0A" #Principal.toText(message.caller) # " has just won the Dragon's Chest worth " # cR_ # " ICP%0AAnd " #Principal.toText(currentHighestRoller) # " won the Dwarf's bonus worth " #cB_ # "!%0AGame is now restarting");
       return #win;
     };
+
     //return if lost and detect if win extra roll
     if (extraRoll_) {
 
       game_.reward += (ticketPrice / 10) * 4;
       game_.bonus += (ticketPrice / 10) * 1;
+      var currentBonus_ : Float = natToFloat(game_.bonus) / 100000000;
+      var cB_ = Float.toText(currentBonus_);
+      var currentReward_ : Float = natToFloat(game_.reward) / 100000000;
+      var cR_ = Float.toText(currentReward_);
+      if (Nat.rem(game_.bonus / 100000000, 10) == 0) {
+        //var n = await notifyDiscord(cR_ # " ICP reached!! Dragon's Chest is getting bigger!%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
+      };
       if (game_.totalBet < 10) {
         let userBonus_ = bonusPoolbyWallet.get(Principal.toText(message.caller));
         switch (userBonus_) {
@@ -843,13 +955,26 @@ shared ({ caller = owner }) actor class ICDragon({
 
       };
       if (dice_1_ == dice_2_) {
-        userDoubleRollQuantityHash.put(Principal.toText(message.caller), doubleRollRemaining_ +1);
-        if (isHighest_ and dice_1_ == 6) return #absoluteHighest;
-        if (isHighest_) return #highestExtra([dice_1_, dice_2_]);
+        if (dice_1_ < 6) userDoubleRollQuantityHash.put(Principal.toText(message.caller), doubleRollRemaining_ +1);
+        if (isHighest_ and dice_1_ == 6) {
+          var n = await notifyDiscord("DWARF'S BONUS WINNER!! The absolute warrior is here!%0ADwarf's bonus for this round is officially won by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the winner%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
+          return #absoluteHighest;
+        };
+        if (isHighest_) {
+          var n = await notifyDiscord("HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
+          return #highestExtra([dice_1_, dice_2_]);
+        };
         return #extra([dice_1_, dice_2_]);
       };
     };
-    if (isHighest_) return #highest([dice_1_, dice_2_]);
+    var currentBonus_ : Float = natToFloat(game_.bonus) / 100000000;
+    var cB_ = Float.toText(currentBonus_);
+    var currentReward_ : Float = natToFloat(game_.reward) / 100000000;
+    var cR_ = Float.toText(currentReward_);
+    if (isHighest_) {
+      var n = await notifyDiscord("HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
+      return #highest([dice_1_, dice_2_]);
+    };
 
     #lose([dice_1_, dice_2_]);
 
@@ -899,7 +1024,7 @@ shared ({ caller = owner }) actor class ICDragon({
     false;
   };
 
-  public shared (message) func claimBonusPool(g_ : Nat, p_ : Principal) : async Bool {
+  public shared (message) func claimBonusPool() : async Bool {
     let reward_ = userClaimableBonusHash.get(Principal.toText(message.caller));
 
     switch (reward_) {
@@ -1087,6 +1212,66 @@ shared ({ caller = owner }) actor class ICDragon({
         return #error("ICP transfer other error");
       };
     };
+  };
+
+  public query func transform(raw : T.TransformArgs) : async T.CanisterHttpResponsePayload {
+    let transformed : T.CanisterHttpResponsePayload = {
+      status = raw.response.status;
+      body = raw.response.body;
+      headers = [
+        {
+          name = "Content-Security-Policy";
+          value = "default-src 'self'";
+        },
+        { name = "Referrer-Policy"; value = "strict-origin" },
+        { name = "Permissions-Policy"; value = "geolocation=(self)" },
+        {
+          name = "Strict-Transport-Security";
+          value = "max-age=63072000";
+        },
+        { name = "X-Frame-Options"; value = "DENY" },
+        { name = "X-Content-Type-Options"; value = "nosniff" },
+      ];
+    };
+    transformed;
+
+  };
+
+  func send_http(url_ : Text) : async Text {
+    let ic : T.IC = actor ("aaaaa-aa");
+
+    let url = url_;
+
+    let request_headers = [
+      { name = "User-Agent"; value = "icdragon_canister" },
+      { name = "Content-Type"; value = "application/json" },
+      { name = "x-api-key"; value = "2021LokaInfinity" },
+
+    ];
+    Debug.print("accessing " #url);
+    let transform_context : T.TransformContext = {
+      function = transform;
+      context = Blob.fromArray([]);
+    };
+
+    let http_request : T.HttpRequestArgs = {
+      url = url;
+      max_response_bytes = null; //optional for request
+      headers = request_headers;
+      body = null; //optional for request
+      method = #get;
+      transform = ?transform_context;
+    };
+
+    Cycles.add(30_000_000_000);
+
+    let http_response : T.HttpResponsePayload = await ic.http_request(http_request);
+    let response_body : Blob = Blob.fromArray(http_response.body);
+    let decoded_text : Text = switch (Text.decodeUtf8(response_body)) {
+      case (null) { "No value returned" };
+      case (?y) { y };
+    };
+    decoded_text;
   };
 
 };
