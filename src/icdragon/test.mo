@@ -32,7 +32,15 @@ shared ({ caller = owner }) actor class Test({
 }) = this {
     //indexes
     public shared (message) func testNem(i_ : Nat) : async Nat {
+        return Nat.rem(i_ / 100000000, 10);
+    };
+
+    public shared (message) func testNum(i_ : Nat) : async Nat {
         return Nat.rem(i_, 10);
+    };
+
+    public shared (message) func tfloat(i_ : Float) : async Float {
+        return Float.rem(i_ / 100000000, 10);
     };
 
 };

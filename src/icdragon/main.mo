@@ -85,6 +85,11 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var currentHighestDice = 0;
   stable var currentHighestRoller = admin;
   stable var counter = 0;
+  stable var rewardMilestone = 1000000000;
+  stable var currentMilestone = 0;
+  stable var currentTotalWins = 0;
+  stable var currentHighestReward = 0;
+  stable var currentReward = 0;
 
   stable var userTicketQuantityHash_ : [(Text, Nat)] = [];
   stable var blistHash_ : [(Text, Bool)] = [];
@@ -148,6 +153,10 @@ shared ({ caller = owner }) actor class ICDragon({
     return a_;
   };
 
+  public query (message) func calculateTotalWin() : async Nat {
+
+    1;
+  };
   public query (message) func getCounter() : async Nat {
     assert (_isAdmin(message.caller));
     return counter;
@@ -176,22 +185,27 @@ shared ({ caller = owner }) actor class ICDragon({
       func() : async () {
         if (counter < 100) { counter += 10 } else { counter := 0 };
         let time_ = now() / 1000000;
-        if (time_ >= startHalvingTimeStamp) {
-          counter := 200;
-          let res = halving();
+        if (time_ >= nextHalvingTimeStamp) {
+          //var n_ = now() / 1000000;
+          nextHalvingTimeStamp := nextHalvingTimeStamp + (24 * 60 * 60 * 10 * 1000);
+          eyesTokenDistribution := eyesTokenDistribution / 2;
+          //counter := 200;
+          //let res = halving();
 
           //schedulerSecondsInterval := 24 * 60 * 60;
-          cancelTimer(timerId);
-          timerId := halving();
+          //cancelTimer(timerId);
+          //halvingExecution();
+          //timerId := halving();
 
         };
       },
     );
 
-    halving();
+    timerId;
   };
   //timer : halving every 10 days
   func halving() : Nat {
+    //cancelTimer(timerId);
     var n = recurringTimer(
       #seconds(24 * 60 * 60),
       func() : async () {
@@ -209,7 +223,8 @@ shared ({ caller = owner }) actor class ICDragon({
     if (eyesToken and eyesDays == 10) {
       eyesTokenDistribution := eyesTokenDistribution / 2;
       eyesDays := 0;
-      nextHalvingTimeStamp := nextHalvingTimeStamp + (24 * 60 * 60 * 10 * 1000);
+      var n_ = now() / 1000000;
+      nextHalvingTimeStamp := n_ + (24 * 60 * 60 * 10 * 1000);
       //if(EyesDays==30)EyesToken:=false;
     };
   };
@@ -542,8 +557,29 @@ shared ({ caller = owner }) actor class ICDragon({
       bonus = currentGame_.bonus;
       highestRoller = currentHighestRoller;
       highestDice = currentHighestDice;
+      highestReward = currentHighestReward;
+      totalReward = currentReward;
+      users = userFirstHash.size();
     };
     #ok(game_);
+  };
+  public query (message) func calculateRewards() : async Nat {
+    assert (_isAdmin(message.caller));
+    var reward_ = 0;
+    currentReward := 0;
+    currentHighestReward := 0;
+    Buffer.iterate<T.Game>(
+      games,
+      func(game) {
+        if (game.id < gameIndex) {
+          if (game.reward > currentHighestReward) currentHighestReward := game.reward;
+          reward_ += game.reward + game.bonus;
+        };
+
+      },
+    );
+    currentReward := reward_;
+    reward_;
   };
 
   public query (message) func getGameByIndex(id_ : Nat) : async T.GameCheck {
@@ -563,6 +599,9 @@ shared ({ caller = owner }) actor class ICDragon({
       bonus = currentGame_.bonus;
       highestRoller = currentHighestRoller;
       highestDice = currentHighestDice;
+      highestReward = currentHighestReward;
+      totalReward = currentReward;
+      users = userFirstHash.size();
     };
     #ok(game_);
   };
@@ -668,6 +707,7 @@ shared ({ caller = owner }) actor class ICDragon({
     ticketPrice := nextTicketPrice;
     currentHighestRoller := siteAdmin;
     initialReward := ticketPrice * 10;
+    currentMilestone := rewardMilestone;
     currentHighestDice := 0;
     let newGame : T.Game = {
       id = gameIndex;
@@ -792,6 +832,12 @@ shared ({ caller = owner }) actor class ICDragon({
     };
   };
 
+  public shared (message) func setCurrentMilestone(i_ : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
+    currentMilestone := i_;
+    return currentMilestone;
+  };
+
   public shared (message) func roll_dice(game_id : Nat) : async T.DiceResult {
     //get game dataassert
     assert (_isNotBlacklisted(message.caller));
@@ -894,6 +940,8 @@ shared ({ caller = owner }) actor class ICDragon({
     //check roll result
     if (dice_1_ == dice_2_ and dice_1_ == 1) {
       Debug.print("win!");
+      if (game_.reward > currentHighestReward) currentHighestReward := game_.reward;
+      currentReward := currentReward + game_.reward;
       //distribute reward
       let userReward_ = userClaimableHash.get(Principal.toText(message.caller));
       switch (userReward_) {
@@ -915,6 +963,7 @@ shared ({ caller = owner }) actor class ICDragon({
       };
       game_.winner := message.caller;
       game_.bonus_winner := currentHighestRoller;
+      currentTotalWins += game_.reward + game_.bonus;
 
       game_.time_ended := now();
       var currentBonus_ : Float = natToFloat(game_.bonus) / 100000000;
@@ -935,12 +984,15 @@ shared ({ caller = owner }) actor class ICDragon({
 
       game_.reward += (ticketPrice / 10) * 4;
       game_.bonus += (ticketPrice / 10) * 1;
+
       var currentBonus_ : Float = natToFloat(game_.bonus) / 100000000;
       var cB_ = Float.toText(currentBonus_);
       var currentReward_ : Float = natToFloat(game_.reward) / 100000000;
       var cR_ = Float.toText(currentReward_);
-      if (Nat.rem(game_.bonus / 100000000, 10) == 0) {
-        //var n = await notifyDiscord(cR_ # " ICP reached!! Dragon's Chest is getting bigger!%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
+      var remR_ = Float.rem(natToFloat(game_.reward) / 100000000.0, 10.0);
+      if (game_.reward >= currentMilestone) {
+        var n = await notifyDiscord(cR_ # " ICP reached!! Dragon's Chest is getting bigger!%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
+        currentMilestone += rewardMilestone;
       };
       if (game_.totalBet < 10) {
         let userBonus_ = bonusPoolbyWallet.get(Principal.toText(message.caller));
@@ -961,7 +1013,7 @@ shared ({ caller = owner }) actor class ICDragon({
           return #absoluteHighest;
         };
         if (isHighest_) {
-          var n = await notifyDiscord("HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
+          //var n = await notifyDiscord("HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
           return #highestExtra([dice_1_, dice_2_]);
         };
         return #extra([dice_1_, dice_2_]);
@@ -972,7 +1024,7 @@ shared ({ caller = owner }) actor class ICDragon({
     var currentReward_ : Float = natToFloat(game_.reward) / 100000000;
     var cR_ = Float.toText(currentReward_);
     if (isHighest_) {
-      var n = await notifyDiscord("HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
+      //var n = await notifyDiscord("HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
       return #highest([dice_1_, dice_2_]);
     };
 

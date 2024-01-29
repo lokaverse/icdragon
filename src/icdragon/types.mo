@@ -70,6 +70,9 @@ module {
         bonus : Nat;
         highestRoller : Principal;
         highestDice : Nat;
+        totalReward : Nat;
+        users : Nat;
+        highestReward : Nat;
 
     };
 

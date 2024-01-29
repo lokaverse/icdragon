@@ -6,6 +6,10 @@
       "type": "motoko",
       "dependencies":["icp_ledger_canister","eyes"]
     },
+    "test": {
+      "main": "src/icdragon/test.mo",
+      "type": "motoko"
+    },
     "icp_ledger_canister": {
       "type": "custom",
       "candid": "https://raw.githubusercontent.com/dfinity/ic/d430f7ad0c6384921801a54b37b9f3c55a360c51/rs/rosetta-api/icrc1/ledger/ledger.did",
