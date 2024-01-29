@@ -181,7 +181,7 @@ shared ({ caller = owner }) actor class ICDragon({
     // Debug.print("stamp " #Int.toText(nextTimeStamp));
     if (startHalvingTimeStamp == 0) return 0;
     timerId := recurringTimer(
-      #seconds(10),
+      #seconds(1),
       func() : async () {
         if (counter < 100) { counter += 10 } else { counter := 0 };
         let time_ = now() / 1000000;
@@ -563,7 +563,7 @@ shared ({ caller = owner }) actor class ICDragon({
     };
     #ok(game_);
   };
-  public query (message) func calculateRewards() : async Nat {
+  public shared (message) func calculateRewards() : async Nat {
     assert (_isAdmin(message.caller));
     var reward_ = 0;
     currentReward := 0;
@@ -743,7 +743,7 @@ shared ({ caller = owner }) actor class ICDragon({
         };
       };
     };
-    return 6;
+    return 0;
   };
 
   public shared (message) func testRoll() : async Nat8 {
@@ -905,6 +905,10 @@ shared ({ caller = owner }) actor class ICDragon({
     var dice_2_ = await roll();
     if (dice_2_ == 0) isZero := true;
     let totalDice_ = dice_1_ + dice_2_;
+    if (isZero) {
+      userDoubleRollQuantityHash.put(Principal.toText(message.caller), doubleRollRemaining_ +1);
+      return #zero;
+    };
     let isHighest_ = (Nat8.toNat(totalDice_) > currentHighestDice);
     if (isHighest_) {
       currentHighestRoller := message.caller;

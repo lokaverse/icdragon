@@ -110,6 +110,7 @@ module {
         #highest : [Nat8];
         #absoluteHighest;
         #highestExtra : [Nat8];
+        #zero;
         #legend;
     };
 
