@@ -100,6 +100,11 @@ module {
         icp_index : Nat;
     };
 
+    public type Migrateable = {
+        #none;
+        #ok : UserV2;
+    };
+
     public type DiceResult = {
         #win;
         #lose : [Nat8];

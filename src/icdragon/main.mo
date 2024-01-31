@@ -62,7 +62,10 @@ shared ({ caller = owner }) actor class ICDragon({
   private stable var startHalvingTimeStamp : Int = 0;
   private stable var nextHalvingTimeStamp : Int = 0;
 
+  private var aliasHash = HashMap.HashMap<Text, Text>(0, Text.equal, Text.hash);
+
   private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userListBackup = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userFirstHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userDoubleRollQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userTicketPurchaseHash = HashMap.HashMap<Text, [T.PaidTicketPurchase]>(0, Text.equal, Text.hash);
@@ -102,6 +105,7 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var userBetHistoryHash_ : [(Text, [T.Bet])] = [];
   stable var timerStarted = false;
   stable var bonusPoolbyWallet_ : [(Text, [Nat])] = [];
+  stable var aliasHash_ : [(Text, Text)] = [];
 
   //stable var transactionHash
 
@@ -121,6 +125,7 @@ shared ({ caller = owner }) actor class ICDragon({
     userBetHistoryHash_ := Iter.toArray(userBetHistoryHash.entries());
     bonusPoolbyWallet_ := Iter.toArray(bonusPoolbyWallet.entries());
     blistHash_ := Iter.toArray(blistHash.entries());
+    aliasHash_ := Iter.toArray(aliasHash.entries());
 
   };
   system func postupgrade() {
@@ -138,6 +143,7 @@ shared ({ caller = owner }) actor class ICDragon({
     userBetHistoryHash := HashMap.fromIter<Text, [T.Bet]>(userBetHistoryHash_.vals(), 1, Text.equal, Text.hash);
     bonusPoolbyWallet := HashMap.fromIter<Text, [Nat]>(bonusPoolbyWallet_.vals(), 1, Text.equal, Text.hash);
     blistHash := HashMap.fromIter<Text, Bool>(blistHash_.vals(), 1, Text.equal, Text.hash);
+    aliasHash := HashMap.fromIter<Text, Text>(aliasHash_.vals(), 1, Text.equal, Text.hash);
 
   };
 
@@ -153,10 +159,59 @@ shared ({ caller = owner }) actor class ICDragon({
     return a_;
   };
 
-  public query (message) func calculateTotalWin() : async Nat {
-
-    1;
+  /* MIGRATION FUNCTIONS */
+  public shared (message) func createBaseAddress() : async () {
+    assert (_isAdmin(message.caller));
+    userListBackup := userFirstHash;
   };
+
+  public shared (message) func isMigrateable(p : Text) : async T.Migrateable {
+    switch (userListBackup.get(p)) {
+      case (?n) {
+        return #ok(await getUserDataByWallet(p));
+      };
+      case (null) {
+        return #none;
+      };
+    };
+  };
+
+  public query (message) func addAlias(old_ : Text) : async Bool {
+    switch (userListBackup.get(old_)) {
+      case (?n) {
+        var newAddr = Principal.toText(message.caller);
+        switch (aliasHash.get(newAddr)) {
+          case (?a) {
+            return false;
+          };
+          case (null) {
+            aliasHash.put(newAddr, old_);
+            return true;
+          };
+        };
+
+      };
+      case (null) {
+        return false;
+      };
+    };
+
+  };
+
+  func getAlias(p : Principal) : Principal {
+    switch (aliasHash.get(Principal.toText(p))) {
+      case (?a) {
+        return Principal.fromText(a);
+      };
+      case (null) {
+        //aliasHash.put(newAddr,old_);
+        return p;
+      };
+    };
+
+  };
+  //END OF MIGRATION FUNCTIONS
+
   public query (message) func getCounter() : async Nat {
     assert (_isAdmin(message.caller));
     return counter;
@@ -170,6 +225,26 @@ shared ({ caller = owner }) actor class ICDragon({
     assert (_isAdmin(message.caller));
     nextHalvingTimeStamp := a;
     return nextHalvingTimeStamp;
+  };
+
+  public shared (message) func migrate(old_ : Text, new_ : Text) : async () {
+    //change value in
+    /*
+
+    if user exist in userList Backup
+
+private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userListBackup = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userFirstHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userDoubleRollQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userTicketPurchaseHash = HashMap.HashMap<Text, [T.PaidTicketPurchase]>(0, Text.equal, Text.hash);
+  private var userClaimableHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userClaimableBonusHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userClaimHistoryHash = HashMap.HashMap<Text, [T.ClaimHistory]>(0, Text.equal, Text.hash);
+  private var userBetHistoryHash = HashMap.HashMap<Text, [T.Bet]>(0, Text.equal, Text.hash);
+  var bonusPoolbyWallet = HashMap.HashMap<Text, [Nat]>(0, Text.equal, Text.hash);
+  private var blistHash = HashMap.HashMap<Text, Bool>(0, Text.equal, Text.hash);
+      */
   };
   //@dev timers initialization, must be called every canister upgrades
   public shared (message) func startHalving(n : Int) : async Nat {
@@ -439,7 +514,8 @@ shared ({ caller = owner }) actor class ICDragon({
   };
 
   public shared (message) func getUserData() : async T.UserV2 {
-    var claimHistory_ = userClaimHistoryHash.get(Principal.toText(message.caller));
+    var p = getAlias(message.caller);
+    var claimHistory_ = userClaimHistoryHash.get(Principal.toText(p));
     var claimHistory : [T.ClaimHistory] = [];
     switch (claimHistory_) {
       case (?c) {
@@ -449,7 +525,7 @@ shared ({ caller = owner }) actor class ICDragon({
         claimHistory := [];
       };
     };
-    var claimable_ = userClaimableHash.get(Principal.toText(message.caller));
+    var claimable_ = userClaimableHash.get(Principal.toText(p));
     var claimable : Nat = 0;
     switch (claimable_) {
       case (?c) {
@@ -459,7 +535,7 @@ shared ({ caller = owner }) actor class ICDragon({
         claimable := 0;
       };
     };
-    var purchase_ = userTicketPurchaseHash.get(Principal.toText(message.caller));
+    var purchase_ = userTicketPurchaseHash.get(Principal.toText(p));
     var purchase : [T.PaidTicketPurchase] = [];
     switch (purchase_) {
       case (?p) {
@@ -469,7 +545,7 @@ shared ({ caller = owner }) actor class ICDragon({
         //Debug.print("no purchase yet");
       };
     };
-    var bets_ = userBetHistoryHash.get(Principal.toText(message.caller));
+    var bets_ = userBetHistoryHash.get(Principal.toText(p));
     var bets : [T.Bet] = [];
     switch (bets_) {
       case (?b) {
@@ -480,39 +556,39 @@ shared ({ caller = owner }) actor class ICDragon({
       };
     };
     var remaining : Nat = 0;
-    switch (userTicketQuantityHash.get(Principal.toText(message.caller))) {
+    switch (userTicketQuantityHash.get(Principal.toText(p))) {
       case (?x) {
         remaining := x;
       };
       case (null) {
         remaining := 0;
-        userTicketQuantityHash.put(Principal.toText(message.caller), 0);
+        userTicketQuantityHash.put(Principal.toText(p), 0);
       };
     };
     var doubleRollRemaining : Nat = 0;
-    switch (userDoubleRollQuantityHash.get(Principal.toText(message.caller))) {
+    switch (userDoubleRollQuantityHash.get(Principal.toText(p))) {
       case (?x) {
         doubleRollRemaining := x;
       };
       case (null) {
         doubleRollRemaining := 0;
-        userDoubleRollQuantityHash.put(Principal.toText(message.caller), 0);
+        userDoubleRollQuantityHash.put(Principal.toText(p), 0);
       };
     };
 
     var bonusReward_ = 0;
-    let userReward_ = userClaimableBonusHash.get(Principal.toText(message.caller));
+    let userReward_ = userClaimableBonusHash.get(Principal.toText(p));
     switch (userReward_) {
       case (?r) {
         bonusReward_ := r;
       };
       case (null) {
-        userClaimableBonusHash.put(Principal.toText(message.caller), 0);
+        userClaimableBonusHash.put(Principal.toText(p), 0);
       };
     };
 
     let userData_ : T.UserV2 = {
-      walletAddress = message.caller;
+      walletAddress = p;
       claimableReward = claimable;
       claimHistory = claimHistory;
       purchaseHistory = purchase;
@@ -615,9 +691,12 @@ shared ({ caller = owner }) actor class ICDragon({
   //@dev--to buy ticket, user should call approve function on icrc2
   public shared (message) func buy_ticket(quantity_ : Nat, ticket_Price_ : Nat, totalPrice_ : Nat) : async T.BookTicketResult {
     //set teh variable
+    var p = getAlias(message.caller);
+    assert (_isNotBlacklisted(p));
     assert (_isNotBlacklisted(message.caller));
+    assert (_isNotPaused());
     //Pay by calling icrc2 transfer from
-    let transferRes_ = await transferFrom(message.caller, quantity_ * ticketPrice);
+    let transferRes_ = await transferFrom(p, quantity_ * ticketPrice);
     var transIndex_ = 0;
     switch transferRes_ {
       case (#success(x)) { transIndex_ := x };
@@ -648,26 +727,26 @@ shared ({ caller = owner }) actor class ICDragon({
     let ticketBookNow_ = ticketPurchaseHistory.get(ticketIndex);
     ticketIndex += 1;
     //write to users hash, both history and remaining ticket hash
-    let userTickets_ = userTicketPurchaseHash.get(Principal.toText(message.caller));
+    let userTickets_ = userTicketPurchaseHash.get(Principal.toText(p));
     switch (userTickets_) {
       case (?x) {
-        userTicketPurchaseHash.put(Principal.toText(message.caller), Array.append<T.PaidTicketPurchase>(x, [ticketBookPaid_]));
+        userTicketPurchaseHash.put(Principal.toText(p), Array.append<T.PaidTicketPurchase>(x, [ticketBookPaid_]));
       };
       case (null) {
-        userTicketPurchaseHash.put(Principal.toText(message.caller), [ticketBookPaid_]);
+        userTicketPurchaseHash.put(Principal.toText(p), [ticketBookPaid_]);
       };
     };
-    let userRemainingTicket_ = userTicketQuantityHash.get(Principal.toText(message.caller));
+    let userRemainingTicket_ = userTicketQuantityHash.get(Principal.toText(p));
     switch (userRemainingTicket_) {
       case (?x) {
-        userTicketQuantityHash.put(Principal.toText(message.caller), x +quantity_);
+        userTicketQuantityHash.put(Principal.toText(p), x +quantity_);
       };
       case (null) {
-        userTicketQuantityHash.put(Principal.toText(message.caller), quantity_);
+        userTicketQuantityHash.put(Principal.toText(p), quantity_);
       };
     };
     if (quantity_ >= 5) {
-      var n = await notifyDiscord("Here comes " #Principal.toText(message.caller) # " with " #Nat.toText(quantity_) # " ticket(s)!%0AGo get that Dragon Eyes, warrior!!");
+      var n = await notifyDiscord("Here comes " #Principal.toText(p) # " with " #Nat.toText(quantity_) # " ticket(s)!%0AGo get that Dragon Eyes, warrior!!");
 
     };
 
@@ -797,16 +876,18 @@ shared ({ caller = owner }) actor class ICDragon({
   };
 
   public shared (message) func initialEyesTokenCheck() : async Nat {
-    switch (userFirstHash.get(Principal.toText(message.caller))) {
+    assert (_isNotPaused());
+    var p = getAlias(message.caller);
+    switch (userFirstHash.get(Principal.toText(p))) {
       case (?x) {
 
         return 0;
       };
       case (null) {
 
-        userFirstHash.put(Principal.toText(message.caller), 0);
+        userFirstHash.put(Principal.toText(p), 0);
         if (eyesToken) {
-          let res_ = transferEyesToken(message.caller, 2);
+          let res_ = transferEyesToken(p, 2);
           return eyesTokenDistribution * 2;
         };
       };
@@ -840,23 +921,26 @@ shared ({ caller = owner }) actor class ICDragon({
 
   public shared (message) func roll_dice(game_id : Nat) : async T.DiceResult {
     //get game dataassert
+    assert (_isNotPaused());
     assert (_isNotBlacklisted(message.caller));
+    var p = getAlias(message.caller);
+    assert (_isNotBlacklisted(p));
     let game_ = games.get(game_id);
     let gameBets_ = game_.bets;
     var remaining_ : Nat = 0;
     var doubleRollRemaining_ : Nat = 0;
     Debug.print("check remaining");
     //get remaining dice roll ticket
-    switch (userTicketQuantityHash.get(Principal.toText(message.caller))) {
+    switch (userTicketQuantityHash.get(Principal.toText(p))) {
       case (?x) {
         remaining_ := x;
       };
       case (null) {
         remaining_ := 0;
-        userTicketQuantityHash.put(Principal.toText(message.caller), 0);
+        userTicketQuantityHash.put(Principal.toText(p), 0);
       };
     };
-    let u = userDoubleRollQuantityHash.get(Principal.toText(message.caller));
+    let u = userDoubleRollQuantityHash.get(Principal.toText(p));
     switch (u) {
       case (?x) {
         doubleRollRemaining_ := x;
@@ -865,7 +949,7 @@ shared ({ caller = owner }) actor class ICDragon({
       case (null) {
         //return #noroll([2, doubleRollRemaining_]);
         doubleRollRemaining_ := 0;
-        userDoubleRollQuantityHash.put(Principal.toText(message.caller), 0);
+        userDoubleRollQuantityHash.put(Principal.toText(p), 0);
       };
     };
     //return #noroll([3, doubleRollRemaining_]);
@@ -892,11 +976,11 @@ shared ({ caller = owner }) actor class ICDragon({
         };
       };
       //substract ticket
-      userTicketQuantityHash.put(Principal.toText(message.caller), remaining_ -1);
+      userTicketQuantityHash.put(Principal.toText(p), remaining_ -1);
       extraRoll_ := true;
     } else {
       //substract ticket
-      userDoubleRollQuantityHash.put(Principal.toText(message.caller), doubleRollRemaining_ -1);
+      userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ -1);
     };
     //ROLL!==============================================================================================
     var isZero = false;
@@ -906,12 +990,12 @@ shared ({ caller = owner }) actor class ICDragon({
     if (dice_2_ == 0) isZero := true;
     let totalDice_ = dice_1_ + dice_2_;
     if (isZero) {
-      userDoubleRollQuantityHash.put(Principal.toText(message.caller), doubleRollRemaining_ +1);
+      userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ +1);
       return #zero;
     };
     let isHighest_ = (Nat8.toNat(totalDice_) > currentHighestDice);
     if (isHighest_) {
-      currentHighestRoller := message.caller;
+      currentHighestRoller := p;
       currentHighestDice := Nat8.toNat(totalDice_);
     };
 
@@ -930,13 +1014,13 @@ shared ({ caller = owner }) actor class ICDragon({
       time = now();
     };
     betIndex += 1;
-    var userBets_ = userBetHistoryHash.get(Principal.toText(message.caller));
+    var userBets_ = userBetHistoryHash.get(Principal.toText(p));
     switch (userBets_) {
       case (?u) {
-        userBetHistoryHash.put(Principal.toText(message.caller), Array.append<T.Bet>(u, [bet_]));
+        userBetHistoryHash.put(Principal.toText(p), Array.append<T.Bet>(u, [bet_]));
       };
       case (null) {
-        userBetHistoryHash.put(Principal.toText(message.caller), [bet_]);
+        userBetHistoryHash.put(Principal.toText(p), [bet_]);
       };
     };
     betHistory.add(bet_);
@@ -947,13 +1031,13 @@ shared ({ caller = owner }) actor class ICDragon({
       if (game_.reward > currentHighestReward) currentHighestReward := game_.reward;
       currentReward := currentReward + game_.reward;
       //distribute reward
-      let userReward_ = userClaimableHash.get(Principal.toText(message.caller));
+      let userReward_ = userClaimableHash.get(Principal.toText(p));
       switch (userReward_) {
         case (?r) {
-          userClaimableHash.put(Principal.toText(message.caller), r +game_.reward);
+          userClaimableHash.put(Principal.toText(p), r +game_.reward);
         };
         case (null) {
-          userClaimableHash.put(Principal.toText(message.caller), game_.reward);
+          userClaimableHash.put(Principal.toText(p), game_.reward);
         };
       };
       let bonusReward_ = userClaimableBonusHash.get(Principal.toText(currentHighestRoller));
@@ -966,7 +1050,7 @@ shared ({ caller = owner }) actor class ICDragon({
         };
       };
       game_.winner := message.caller;
-      game_.bonus_winner := currentHighestRoller;
+      game_.bonus_winner := message.caller;
       currentTotalWins += game_.reward + game_.bonus;
 
       game_.time_ended := now();
@@ -974,12 +1058,13 @@ shared ({ caller = owner }) actor class ICDragon({
       var cB_ = Float.toText(currentBonus_);
       var currentReward_ : Float = natToFloat(game_.reward) / 100000000;
       var cR_ = Float.toText(currentReward_);
-      startNewGame();
+
       if (isHighest_) {
         var n = await notifyDiscord("WINNER!! A legendary warrior has appeared!%0ABoth Dragon Chest AND the Dwarf's bonus have been obtained!%0A" #Principal.toText(message.caller) # " has just won the Dragon's Chest worth " #cR_ # " ICP%0AAnd also won the Dwarf's bonus worth " #cB_ # " ICP!%0AGame is now restarting");
         return #legend;
       };
       var n = await notifyDiscord("WINNER!! The King has obtained the Dragon Eyes!!%0A" #Principal.toText(message.caller) # " has just won the Dragon's Chest worth " # cR_ # " ICP%0AAnd " #Principal.toText(currentHighestRoller) # " won the Dwarf's bonus worth " #cB_ # "!%0AGame is now restarting");
+      startNewGame();
       return #win;
     };
 
@@ -998,7 +1083,7 @@ shared ({ caller = owner }) actor class ICDragon({
         var n = await notifyDiscord(cR_ # " ICP reached!! Dragon's Chest is getting bigger!%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
         currentMilestone += rewardMilestone;
       };
-      if (game_.totalBet < 10) {
+      /*if (game_.totalBet < 10) {
         let userBonus_ = bonusPoolbyWallet.get(Principal.toText(message.caller));
         switch (userBonus_) {
           case (?r) {
@@ -1009,9 +1094,9 @@ shared ({ caller = owner }) actor class ICDragon({
           };
         };
 
-      };
+      }; */
       if (dice_1_ == dice_2_) {
-        if (dice_1_ < 6) userDoubleRollQuantityHash.put(Principal.toText(message.caller), doubleRollRemaining_ +1);
+        if (dice_1_ < 6) userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ +1);
         if (isHighest_ and dice_1_ == 6) {
           var n = await notifyDiscord("DWARF'S BONUS WINNER!! The absolute warrior is here!%0ADwarf's bonus for this round is officially won by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the winner%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
           return #absoluteHighest;
@@ -1041,7 +1126,8 @@ shared ({ caller = owner }) actor class ICDragon({
   };
 
   public shared (message) func claimReward() : async Bool {
-    let reward_ = userClaimableHash.get(Principal.toText(message.caller));
+    var p = getAlias(message.caller);
+    let reward_ = userClaimableHash.get(Principal.toText(p));
 
     switch (reward_) {
       case (?r) {
@@ -1049,20 +1135,20 @@ shared ({ caller = owner }) actor class ICDragon({
         let transferResult_ = await transfer(r -10000, message.caller);
         switch transferResult_ {
           case (#success(x)) {
-            userClaimableHash.put(Principal.toText(message.caller), 0);
+            userClaimableHash.put(Principal.toText(p), 0);
 
             let claimHistory_ : T.ClaimHistory = {
               time = now();
               icp_transfer_index = x;
               reward_claimed = r;
             };
-            let claimArray_ = userClaimHistoryHash.get(Principal.toText(message.caller));
+            let claimArray_ = userClaimHistoryHash.get(Principal.toText(p));
             switch (claimArray_) {
               case (?c) {
-                userClaimHistoryHash.put(Principal.toText(message.caller), Array.append<T.ClaimHistory>(c, [claimHistory_]));
+                userClaimHistoryHash.put(Principal.toText(p), Array.append<T.ClaimHistory>(c, [claimHistory_]));
               };
               case (null) {
-                userClaimHistoryHash.put(Principal.toText(message.caller), [claimHistory_]);
+                userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
               };
             };
             return true;
@@ -1081,7 +1167,8 @@ shared ({ caller = owner }) actor class ICDragon({
   };
 
   public shared (message) func claimBonusPool() : async Bool {
-    let reward_ = userClaimableBonusHash.get(Principal.toText(message.caller));
+    var p = getAlias(message.caller);
+    let reward_ = userClaimableBonusHash.get(Principal.toText(p));
 
     switch (reward_) {
       case (?r) {
@@ -1089,20 +1176,20 @@ shared ({ caller = owner }) actor class ICDragon({
         let transferResult_ = await transfer(r -10000, message.caller);
         switch transferResult_ {
           case (#success(x)) {
-            userClaimableBonusHash.put(Principal.toText(message.caller), 0);
+            userClaimableBonusHash.put(Principal.toText(p), 0);
 
             let claimHistory_ : T.ClaimHistory = {
               time = now();
               icp_transfer_index = x;
               reward_claimed = r;
             };
-            let claimArray_ = userClaimHistoryHash.get(Principal.toText(message.caller));
+            let claimArray_ = userClaimHistoryHash.get(Principal.toText(p));
             switch (claimArray_) {
               case (?c) {
-                userClaimHistoryHash.put(Principal.toText(message.caller), Array.append<T.ClaimHistory>(c, [claimHistory_]));
+                userClaimHistoryHash.put(Principal.toText(p), Array.append<T.ClaimHistory>(c, [claimHistory_]));
               };
               case (null) {
-                userClaimHistoryHash.put(Principal.toText(message.caller), [claimHistory_]);
+                userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
               };
             };
             return true;
