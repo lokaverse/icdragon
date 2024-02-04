@@ -101,7 +101,7 @@ module {
     };
 
     public type Migrateable = {
-        #none;
+        #none : Nat;
         #ok : UserV2;
     };
 
@@ -148,6 +148,7 @@ module {
         gameHistory : [Bet];
         claimableBonus : Nat;
         availableDiceRoll : Nat;
+        alias : Principal;
     };
 
     public type Timestamp = Nat64;
