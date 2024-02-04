@@ -946,14 +946,53 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       };
       case (null) {
 
-        userFirstHash.put(Principal.toText(p), 0);
         if (eyesToken) {
-          let res_ = transferEyesToken(message.caller, 2);
-          return eyesTokenDistribution * 2;
+          let res_ = await transferEyesToken(message.caller, 2);
+          switch (res_) {
+            case (#success(n)) {
+              userFirstHash.put(Principal.toText(p), 0);
+              return eyesTokenDistribution * 2;
+            };
+            case (#error(x)) {
+              return 0;
+            };
+          };
+
         };
       };
     };
-    1;
+    0;
+  };
+
+  public shared (message) func manualUpdateEyes(p_ : Text) : async Nat {
+    assert (_isAdmin(message.caller));
+    assert (_isNotPaused());
+    var p = getAlias(Principal.fromText(p_));
+    userFirstHash.delete(p_);
+    //userFirstHash.delete(Principal.toText(message.caller));
+    switch (userFirstHash.get(Principal.toText(p))) {
+      case (?x) {
+
+        return 0;
+      };
+      case (null) {
+
+        if (eyesToken) {
+          let res_ = await transferEyesToken(p, 2);
+          switch (res_) {
+            case (#success(a)) {
+              userFirstHash.put(Principal.toText(p), 0);
+              return a;
+            };
+            case (#error(x)) {
+              return 0;
+            };
+          };
+          return 0;
+        };
+      };
+    };
+    0;
   };
   func _isBlacklisted(p : Principal) : Bool {
     switch (blistHash.get(Principal.toText(p))) {

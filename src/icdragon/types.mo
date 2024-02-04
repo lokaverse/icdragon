@@ -105,6 +105,12 @@ module {
         #ok : UserV2;
     };
 
+    public type EyesCheckResult = {
+        #none : Nat;
+
+        #ok : Nat;
+        #res : TransferResult;
+    };
     public type DiceResult = {
         #win;
         #lose : [Nat8];
