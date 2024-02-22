@@ -112,17 +112,17 @@ module {
         #res : TransferResult;
     };
     public type DiceResult = {
-        #win;
+        #win : Nat8;
         #lose : [Nat8];
         #extra : [Nat8];
-        #closed;
+        #closed : Nat8;
         #noroll : [Nat];
         #transferFailed : Text;
         #highest : [Nat8];
-        #absoluteHighest;
+        #absoluteHighest : Nat8;
         #highestExtra : [Nat8];
-        #zero;
-        #legend;
+        #zero : Nat8;
+        #legend : Nat8;
     };
 
     public type TransferResult = {

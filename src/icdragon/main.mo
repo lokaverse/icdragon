@@ -93,6 +93,7 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var currentTotalWins = 0;
   stable var currentHighestReward = 0;
   stable var currentReward = 0;
+  stable var devThreshold = 8000000000;
 
   stable var userTicketQuantityHash_ : [(Text, Nat)] = [];
   stable var blistHash_ : [(Text, Bool)] = [];
@@ -153,6 +154,42 @@ shared ({ caller = owner }) actor class ICDragon({
     assert (_isAdmin(message.caller));
     let tm = now() / 1000000;
     return tm;
+  };
+
+  public shared (message) func getEyesWalletDist() : async [(Text, Nat)] {
+    assert (_isAdmin(message.caller));
+    assert (_isNotPaused());
+    var it_ = Iter.toArray(userFirstHash.entries());
+    var al_ = Iter.toArray(aliasHash.entries());
+    var ct_ = 0;
+    var eyesDist_ : [(Text, Nat)] = [];
+    for (n in it_.vals()) {
+
+      var t_ = n.0;
+      var f = Array.find<(Text, Text)>(al_, func x = x.1 == t_);
+      switch (f) {
+        case (?dd) {
+          //t_ := dd.0;
+        };
+        case (null) {
+
+        };
+      };
+
+      let balance_ = await Eyes.icrc1_balance_of({
+        owner = Principal.fromText(t_);
+        subaccount = null;
+      });
+      if (balance_ > 0) {
+        ct_ += 1;
+        eyesDist_ := Array.append(eyesDist_, [(t_, balance_)]);
+        //var f = Array.find<(Text, Text)>(al_, func x = x.1 == t_);
+        //if (f != null) ct_ += 1;
+        //var t = await transferEyesToken(Principal.fromText(t_), 2);
+      };
+
+    };
+    return eyesDist_;
   };
 
   public query (message) func getTicketPurchaseHash() : async [(Text, [T.PaidTicketPurchase])] {
@@ -1085,6 +1122,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       };
     };
     let u = userDoubleRollQuantityHash.get(Principal.toText(p));
+
     switch (u) {
       case (?x) {
         doubleRollRemaining_ := x;
@@ -1099,7 +1137,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     //return #noroll([3, doubleRollRemaining_]);
 
     //check if the game is already won and closed
-    if (game_.time_ended != 0) return #closed;
+    if (game_.time_ended != 0) return #closed(1);
     //check if there is a ticket remaining including free double roll
     let total_ = remaining_ + doubleRollRemaining_;
     if (total_ == 0) return #noroll([remaining_, doubleRollRemaining_]);
@@ -1107,16 +1145,23 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
     var extraRoll_ = false;
     //ICP send 50% of ticket price to holder
+    var walletBalance = await ICPLedger.icrc1_balance_of({
+      owner = Principal.fromActor(this);
+      subaccount = null;
+    });
     if (doubleRollRemaining_ == 0) {
       let devFeeAmt = (ticketPrice / 2) -10000;
       Debug.print("transferring to dev" #Nat.toText(devFeeAmt));
-      let transferResult_ = await transfer(devFeeAmt, devPool);
-      var transferred = false;
-      switch transferResult_ {
-        case (#success(x)) { transferred := true };
-        case (#error(txt)) {
-          Debug.print("error " #txt);
-          return #transferFailed(txt);
+      var finalThreshold = devThreshold + game_.reward;
+      if (walletBalance > finalThreshold) {
+        let transferResult_ = await transfer(devFeeAmt, devPool);
+        var transferred = false;
+        switch transferResult_ {
+          case (#success(x)) { transferred := true };
+          case (#error(txt)) {
+            Debug.print("error " #txt);
+            return #transferFailed(txt);
+          };
         };
       };
       //substract ticket
@@ -1135,7 +1180,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     let totalDice_ = dice_1_ + dice_2_;
     if (isZero) {
       userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ +1);
-      return #zero;
+      return #zero(1);
     };
     let isHighest_ = (Nat8.toNat(totalDice_) > currentHighestDice);
     if (isHighest_) {
@@ -1205,11 +1250,11 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
       if (isHighest_) {
         var n = await notifyDiscord("WINNER!! A legendary warrior has appeared!%0ABoth Dragon Chest AND the Dwarf's bonus have been obtained!%0A" #Principal.toText(message.caller) # " has just won the Dragon's Chest worth " #cR_ # " ICP%0AAnd also won the Dwarf's bonus worth " #cB_ # " ICP!%0AGame is now restarting");
-        return #legend;
+        return #legend(1);
       };
       var n = await notifyDiscord("WINNER!! The King has obtained the Dragon Eyes!!%0A" #Principal.toText(message.caller) # " has just won the Dragon's Chest worth " # cR_ # " ICP%0AAnd " #Principal.toText(currentHighestRoller) # " won the Dwarf's bonus worth " #cB_ # "!%0AGame is now restarting");
       startNewGame();
-      return #win;
+      return #win(1);
     };
 
     //return if lost and detect if win extra roll
@@ -1243,7 +1288,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         if (dice_1_ < 6) userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ +1);
         if (isHighest_ and dice_1_ == 6) {
           var n = await notifyDiscord("DWARF'S BONUS WINNER!! The absolute warrior is here!%0ADwarf's bonus for this round is officially won by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the winner%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
-          return #absoluteHighest;
+          return #absoluteHighest(1);
         };
         if (isHighest_ and (dice_1_ + dice_2_ > 5)) {
           var n = await notifyDiscord("NEW HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
@@ -1462,7 +1507,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     };
   };
 
-  public shared (message) func emgT(amount_ : Nat, to_ : Principal) : async T.TransferResult {
+  /*public shared (message) func emgT(amount_ : Nat, to_ : Principal) : async T.TransferResult {
     //public shared (message) func transfer(amount_ : Nat, to_ : Principal) : async T.TransferResult {
     assert (_isAdmin(message.caller));
     let transferResult = await ICPLedger.icrc1_transfer({
@@ -1502,7 +1547,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         return #error("ICP error Other");
       };
     };
-  };
+  }; */
 
   func transferFrom(owner_ : Principal, amount_ : Nat) : async T.TransferResult {
     Debug.print("transferring from " #Principal.toText(owner_) # " by " #Principal.toText(Principal.fromActor(this)) # " " #Nat.toText(amount_));
