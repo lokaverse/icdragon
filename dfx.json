@@ -6,6 +6,11 @@
       "type": "motoko",
       "dependencies":["icp_ledger_canister","eyes"]
     },
+    "icdragon_arb": {
+      "main": "src/icdragon_arb/main.mo",
+      "type": "motoko",
+      "dependencies":["icp_ledger_canister","eyes"]
+    },
     "test": {
       "main": "src/icdragon/test.mo",
       "type": "motoko"

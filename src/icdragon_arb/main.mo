@@ -61,8 +61,6 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var nextTicketPrice = 50000000;
   private stable var startHalvingTimeStamp : Int = 0;
   private stable var nextHalvingTimeStamp : Int = 0;
-  private stable var developerFee = 0;
-  private stable var currentGameRolls = 0;
 
   private var aliasHash = HashMap.HashMap<Text, Text>(0, Text.equal, Text.hash);
 
@@ -863,7 +861,6 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     ticketPrice := 500000;
     initialReward := ticketPrice * 10;
     initialBonus := ticketPrice * 2;
-    developerFee += 0;
 
     assert (gameIndex == 0);
     assert (firstGameStarted == false);
@@ -893,7 +890,6 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     initialReward := ticketPrice * 10;
     currentMilestone := rewardMilestone;
     currentHighestDice := 0;
-    currentGameRolls := 0;
     let newGame : T.Game = {
       id = gameIndex;
       var totalBet = 0;
@@ -1110,7 +1106,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     assert (_isNotBlacklisted(message.caller));
     var p = getAlias(message.caller);
     assert (_isNotBlacklisted(p));
-    var game_ = games.get(game_id);
+    let game_ = games.get(game_id);
     let gameBets_ = game_.bets;
     var remaining_ : Nat = 0;
     var doubleRollRemaining_ : Nat = 0;
@@ -1154,8 +1150,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       subaccount = null;
     });
     if (doubleRollRemaining_ == 0) {
-      let devFeeAmt = (ticketPrice / 2);
-      developerFee := developerFee + devFeeAmt;
+      let devFeeAmt = (ticketPrice / 2) -10000;
       Debug.print("transferring to dev" #Nat.toText(devFeeAmt));
       var finalThreshold = devThreshold + game_.reward;
       if (walletBalance > finalThreshold) {
@@ -1172,11 +1167,6 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       //substract ticket
       userTicketQuantityHash.put(Principal.toText(p), remaining_ -1);
       extraRoll_ := true;
-      game_ := games.get(game_id);
-      if (game_.time_ended != 0) {
-        userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ + 1);
-        return #closed(1);
-      };
     } else {
       //substract ticket
       userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ -1);
@@ -1191,11 +1181,6 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     if (isZero) {
       userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ +1);
       return #zero(1);
-    };
-    game_ := games.get(game_id);
-    if (game_.time_ended != 0) {
-      userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ + 1);
-      return #closed(1);
     };
     let isHighest_ = (Nat8.toNat(totalDice_) > currentHighestDice);
     if (isHighest_) {
@@ -1283,19 +1268,9 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       var currentReward_ : Float = natToFloat(game_.reward) / 100000000;
       var cR_ = Float.toText(currentReward_);
       var remR_ = Float.rem(natToFloat(game_.reward) / 100000000.0, 10.0);
-      game_ := games.get(game_id);
-      if (game_.time_ended != 0) {
-        userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ + 1);
-        return #closed(1);
-      };
       if (game_.reward >= currentMilestone) {
         var n = await notifyDiscord(cR_ # " ICP reached!! Dragon's Chest is getting bigger!%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
         currentMilestone += rewardMilestone;
-      };
-      game_ := games.get(game_id);
-      if (game_.time_ended != 0) {
-        userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ + 1);
-        return #closed(1);
       };
       /*if (game_.totalBet < 10) {
         let userBonus_ = bonusPoolbyWallet.get(Principal.toText(message.caller));
