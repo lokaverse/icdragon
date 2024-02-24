@@ -912,9 +912,11 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       owner = Principal.fromActor(this);
       subaccount = null;
     });
-
+    var remT = remainingTickets();
+    var tp = remT * ticketPrice;
+    walletBalance_ := walletBalance_ - tp;
     var finalThreshold = devThreshold + totalClaimable;
-    var th_ = "" #Nat.toText(finalThreshold) # " || balance : " #Nat.toText(walletBalance_);
+    var th_ = "" #Nat.toText(finalThreshold) # " | th : " #Nat.toText(devThreshold) # " | ticket : " #Nat.toText(tp) # " | c : " #Nat.toText(totalClaimable) # " || B : " #Nat.toText(walletBalance_);
     return th_;
   };
 
@@ -1329,18 +1331,22 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         owner = Principal.fromActor(this);
         subaccount = null;
       });
-
-      if (pendingFee > (ticketPrice * 12)) {
-
+      var rtick = remainingTickets();
+      rtick := rtick * ticketPrice;
+      if (walletBalance_ > rtick) walletBalance_ := walletBalance_ - rtick;
+      if (pendingFee > (ticketPrice * 12) and (walletBalance_ > rtick)) {
         var transfer_ = (pendingFee - ticketPrice * 12);
-        var finalThreshold = devThreshold + totalClaimable + transfer_;
-        if (walletBalance_ >= finalThreshold) {
+        var finalThreshold = devThreshold + totalClaimable;
+        if (walletBalance_ > finalThreshold) {
+          if (transfer_ > (walletBalance_ -finalThreshold)) {
+            transfer_ := (walletBalance_ -finalThreshold);
+          };
           let transferResult_ = await transfer(transfer_ -10000, devPool);
           var transferred = false;
           switch transferResult_ {
             case (#success(x)) { transferred := true; pendingFee := 0 };
             case (#error(txt)) {
-              developerFee += pendingFee;
+              developerFee += transfer_;
               Debug.print("error " #txt);
               //return #transferFailed(txt);
             };
@@ -1516,6 +1522,13 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   public shared (message) func getRemainingTickets() : async Nat {
     assert (_isAdmin(message.caller));
+    var total_ = remainingTickets();
+
+    return total_;
+  };
+
+  func remainingTickets() : Nat {
+    //assert (_isAdmin(message.caller));
     assert (_isNotPaused());
     var re_ = Iter.toArray(userTicketQuantityHash.entries());
 
@@ -1527,7 +1540,6 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
     return total_;
   };
-
   public shared (message) func getBList() : async [(Text, Bool)] {
     assert (_isAdmin(message.caller));
     assert (_isNotPaused());

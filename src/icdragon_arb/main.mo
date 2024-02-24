@@ -202,6 +202,14 @@ shared ({ caller = owner }) actor class ICDragon({
     return a_;
   };
 
+  public query (message) func getTicketPurchaseHashByWallet(p : Text) : async ?[T.PaidTicketPurchase] {
+    assert (_isAdmin(message.caller));
+    //let a_ = Iter.toArray(userTicketPurchaseHash.entries());
+    let hash_ = userTicketPurchaseHash.get(p);
+
+    return hash_;
+  };
+
   /* MIGRATION FUNCTIONS */ ////////////////////////////////////////////
   public shared (message) func createBaseAddress() : async () {
     assert (_isAdmin(message.caller));
@@ -414,7 +422,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     };
   };
 
-  public query (message) func blacklist(p : Text) : async Bool {
+  public shared (message) func blacklist(p : Text) : async Bool {
     assert (_isAdmin(message.caller));
     blistHash.put(p, true);
     true;
@@ -898,6 +906,20 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     return totalClaimable;
   };
 
+  public shared (message) func getCurrentThreshold() : async Text {
+    assert (_isAdmin(message.caller));
+    var walletBalance_ = await ICPLedger.icrc1_balance_of({
+      owner = Principal.fromActor(this);
+      subaccount = null;
+    });
+    var remT = remainingTickets();
+    var tp = remT * ticketPrice;
+    walletBalance_ := walletBalance_ - tp;
+    var finalThreshold = devThreshold + totalClaimable;
+    var th_ = "" #Nat.toText(finalThreshold) # " | th : " #Nat.toText(devThreshold) # " | ticket : " #Nat.toText(tp) # " | c : " #Nat.toText(totalClaimable) # "|| B : " #Nat.toText(walletBalance_);
+    return th_;
+  };
+
   func startNewGame() {
     gameIndex += 1;
     ticketPrice := nextTicketPrice;
@@ -1122,6 +1144,28 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     return developerFee;
   };
 
+  public shared (message) func setDevThreshold(n_ : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
+    devThreshold := n_;
+    n_;
+  };
+
+  public shared (message) func addTicket(p : Text, quantity_ : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
+    let userRemainingTicket_ = userTicketQuantityHash.get(p);
+    var tots_ = quantity_;
+    switch (userRemainingTicket_) {
+      case (?x) {
+        userTicketQuantityHash.put(p, x +quantity_);
+        tots_ := x +quantity_;
+      };
+      case (null) {
+        userTicketQuantityHash.put(p, quantity_);
+      };
+    };
+    tots_;
+  };
+
   public shared (message) func roll_dice(game_id : Nat) : async T.DiceResult {
     //get game dataassert
     assert (_isNotPaused());
@@ -1287,18 +1331,22 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         owner = Principal.fromActor(this);
         subaccount = null;
       });
-
-      if (pendingFee > (ticketPrice * 12)) {
-
+      var rtick = remainingTickets();
+      rtick := rtick * ticketPrice;
+      if (walletBalance_ > rtick) walletBalance_ := walletBalance_ - rtick;
+      if (pendingFee > (ticketPrice * 12) and (walletBalance_ > rtick)) {
         var transfer_ = (pendingFee - ticketPrice * 12);
-        var finalThreshold = devThreshold + totalClaimable + transfer_;
-        if (walletBalance_ >= finalThreshold) {
+        var finalThreshold = devThreshold + totalClaimable;
+        if (walletBalance_ > finalThreshold) {
+          if (transfer_ > (walletBalance_ -finalThreshold)) {
+            transfer_ := (walletBalance_ -finalThreshold);
+          };
           let transferResult_ = await transfer(transfer_ -10000, devPool);
           var transferred = false;
           switch transferResult_ {
             case (#success(x)) { transferred := true; pendingFee := 0 };
             case (#error(txt)) {
-              developerFee += pendingFee;
+              developerFee += transfer_;
               Debug.print("error " #txt);
               //return #transferFailed(txt);
             };
@@ -1401,7 +1449,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         switch transferResult_ {
           case (#success(x)) {
             userClaimableHash.put(Principal.toText(p), 0);
-            totalClaimable -= r;
+            if (totalClaimable >= r) totalClaimable := totalClaimable - r;
             let claimHistory_ : T.ClaimHistory = {
               time = now();
               icp_transfer_index = x;
@@ -1442,7 +1490,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         switch transferResult_ {
           case (#success(x)) {
             userClaimableBonusHash.put(Principal.toText(p), 0);
-            totalClaimable -= r;
+            if (totalClaimable >= r) totalClaimable := totalClaimable - r;
             let claimHistory_ : T.ClaimHistory = {
               time = now();
               icp_transfer_index = x;
@@ -1470,6 +1518,55 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       };
     };
     false;
+  };
+
+  public shared (message) func getRemainingTickets() : async Nat {
+    assert (_isAdmin(message.caller));
+    var total_ = remainingTickets();
+
+    return total_;
+  };
+
+  func remainingTickets() : Nat {
+    //assert (_isAdmin(message.caller));
+    assert (_isNotPaused());
+    var re_ = Iter.toArray(userTicketQuantityHash.entries());
+
+    var total_ = 0;
+    for (n in re_.vals()) {
+      if (_isNotBlacklisted(Principal.fromText(n.0))) { total_ := total_ + n.1 };
+
+    };
+
+    return total_;
+  };
+  public shared (message) func getBList() : async [(Text, Bool)] {
+    assert (_isAdmin(message.caller));
+    assert (_isNotPaused());
+    var blist__ = Iter.toArray(blistHash.entries());
+
+    return blist__;
+  };
+
+  public shared (message) func calculateUnclaimed() : async Nat {
+    assert (_isAdmin(message.caller));
+    assert (_isNotPaused());
+    var re_ = Iter.toArray(userClaimableHash.entries());
+    var bo_ = Iter.toArray(userClaimableBonusHash.entries());
+    var total_ = 0;
+    for (n in re_.vals()) {
+
+      total_ := total_ + n.1;
+
+    };
+    for (n2 in bo_.vals()) {
+
+      total_ := total_ + n2.1;
+
+    };
+    totalClaimable := total_;
+    return total_;
+
   };
 
   public shared (message) func emergencySendEyes(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
