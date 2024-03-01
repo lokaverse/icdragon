@@ -11,6 +11,7 @@ module {
         id : Nat;
         game_id : Nat;
         walletAddress : Principal;
+        ethWalletAddress : Text;
         dice_1 : Nat8;
         dice_2 : Nat8;
         time : Int;
@@ -37,7 +38,7 @@ module {
 
     public type ClaimHistory = {
         time : Int;
-        icp_transfer_index : Nat;
+        txhash : Text;
         reward_claimed : Nat;
     };
 
@@ -62,17 +63,18 @@ module {
 
     public type CurrentGame = {
         id : Nat;
-        winner : Principal;
+        winner : Text;
         time_created : Int;
         time_ended : Int;
         reward : Nat;
         bets : [Bet];
         bonus : Nat;
-        highestRoller : Principal;
+        highestRoller : Text;
         highestDice : Nat;
         totalReward : Nat;
         users : Nat;
         highestReward : Nat;
+        houseVault : Text;
 
     };
 
@@ -87,7 +89,7 @@ module {
         time : Int;
         quantity : Nat;
         totalPrice : Nat;
-        var icp_index : Nat;
+        var icp_index : Text;
 
     };
 
@@ -97,7 +99,7 @@ module {
         time : Int;
         quantity : Nat;
         totalPrice : Nat;
-        icp_index : Nat;
+        icp_index : Text;
     };
 
     public type Migrateable = {
@@ -126,6 +128,12 @@ module {
     };
 
     public type TransferResult = {
+        #success : Text;
+        #error : Text;
+
+    };
+
+    public type TransferEyesResult = {
         #success : Nat;
         #error : Text;
 
@@ -148,6 +156,7 @@ module {
 
     public type UserV2 = {
         walletAddress : Principal;
+        ethWalletAddress : Text;
         claimableReward : Nat;
         claimHistory : [ClaimHistory];
         purchaseHistory : [PaidTicketPurchase];

@@ -64,6 +64,7 @@ shared ({ caller = owner }) actor class ICDragon({
   private stable var developerFee = 0;
   private stable var pendingFee = 0;
   private stable var currentGameRolls = 0;
+  private stable var arbCanister = "";
 
   private var aliasHash = HashMap.HashMap<Text, Text>(0, Text.equal, Text.hash);
 
@@ -482,6 +483,12 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     vault_;
   };
 
+  public shared (message) func setARBCanister(n : Text) : async Text {
+    assert (_isAdmin(message.caller));
+    arbCanister := n;
+    n;
+  };
+
   public shared (message) func setRewardPool(vault_ : Principal) : async Principal {
     assert (_isAdmin(message.caller));
     rewardPool := vault_;
@@ -872,7 +879,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     assert (_isAdmin(message.caller));
     ticketPrice := 500000;
     initialReward := ticketPrice * 10;
-    initialBonus := ticketPrice * 2;
+    initialBonus := ticketPrice + (ticketPrice / 2);
     developerFee += 0;
 
     assert (gameIndex == 0);
@@ -912,11 +919,12 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       owner = Principal.fromActor(this);
       subaccount = null;
     });
+    totalClaimable := _calculateUnclaimed();
     var remT = remainingTickets();
     var tp = remT * ticketPrice;
     walletBalance_ := walletBalance_ - tp;
     var finalThreshold = devThreshold + totalClaimable;
-    var th_ = "" #Nat.toText(finalThreshold) # " | th : " #Nat.toText(devThreshold) # " | ticket : " #Nat.toText(tp) # " | c : " #Nat.toText(totalClaimable) # " || B : " #Nat.toText(walletBalance_);
+    var th_ = "" #Nat.toText(finalThreshold) # " (th : " #Nat.toText(devThreshold) # ", ticket : " #Nat.toText(tp) # "(" #Nat.toText(remT) # "), cl : " #Nat.toText(totalClaimable) # ") || B : " #Nat.toText(walletBalance_) # " (" #Nat.toText(walletBalance_ + tp) # ")";
     return th_;
   };
 
@@ -937,7 +945,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       var time_ended = 0;
       var reward = initialReward;
       var bets = [];
-      var bonus = ticketPrice * 2;
+      var bonus = ticketPrice + (ticketPrice / 2);
       var bonus_winner = siteAdmin;
       var bonus_claimed = false;
     };
@@ -1018,7 +1026,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   public shared (message) func initialEyesTokenCheck() : async Nat {
     assert (_isNotPaused());
-    var p = getAlias(message.caller);
+    /* var p = getAlias(message.caller);
     switch (userFirstHash.get(Principal.toText(p))) {
       case (?x) {
 
@@ -1040,7 +1048,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
         };
       };
-    };
+    }; */
     0;
   };
 
@@ -1150,22 +1158,23 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     n_;
   };
 
-  public shared (message) func addTicket(p : Text, quantity_ : Nat) : async Nat {
+  /*public shared (message) func addB(p : Text, quantity_ : Nat) : async Nat {
     assert (_isAdmin(message.caller));
-    let userRemainingTicket_ = userTicketQuantityHash.get(p);
+    let bon_ = userClaimableHash.get(p);
     var tots_ = quantity_;
-    switch (userRemainingTicket_) {
+    switch (bon_) {
       case (?x) {
-        userTicketQuantityHash.put(p, x +quantity_);
+        userClaimableHash.put(p, x +quantity_);
+        //userTicketQuantityHash.put(p, 0);
         tots_ := x +quantity_;
       };
       case (null) {
-        userTicketQuantityHash.put(p, quantity_);
+        userClaimableHash.put(p, quantity_);
       };
     };
     tots_;
   };
-
+*/
   public shared (message) func roll_dice(game_id : Nat) : async T.DiceResult {
     //get game dataassert
     assert (_isNotPaused());
@@ -1439,6 +1448,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   };
 
   public shared (message) func claimReward() : async Bool {
+    assert (_isNotPaused());
     var p = getAlias(message.caller);
     let reward_ = userClaimableHash.get(Principal.toText(p));
 
@@ -1449,7 +1459,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         switch transferResult_ {
           case (#success(x)) {
             userClaimableHash.put(Principal.toText(p), 0);
-            if (totalClaimable >= r) totalClaimable := totalClaimable - r;
+            totalClaimable := _calculateUnclaimed();
             let claimHistory_ : T.ClaimHistory = {
               time = now();
               icp_transfer_index = x;
@@ -1480,6 +1490,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   };
 
   public shared (message) func claimBonusPool() : async Bool {
+    assert (_isNotPaused());
     var p = getAlias(message.caller);
     let reward_ = userClaimableBonusHash.get(Principal.toText(p));
 
@@ -1490,7 +1501,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         switch transferResult_ {
           case (#success(x)) {
             userClaimableBonusHash.put(Principal.toText(p), 0);
-            if (totalClaimable >= r) totalClaimable := totalClaimable - r;
+            totalClaimable := _calculateUnclaimed();
             let claimHistory_ : T.ClaimHistory = {
               time = now();
               icp_transfer_index = x;
@@ -1549,7 +1560,14 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   };
 
   public shared (message) func calculateUnclaimed() : async Nat {
-    assert (_isAdmin(message.caller));
+    var total_ = _calculateUnclaimed();
+    totalClaimable := total_;
+    return total_;
+
+  };
+
+  func _calculateUnclaimed() : Nat {
+    //assert (_isAdmin(message.caller));
     assert (_isNotPaused());
     var re_ = Iter.toArray(userClaimableHash.entries());
     var bo_ = Iter.toArray(userClaimableBonusHash.entries());
@@ -1564,15 +1582,30 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       total_ := total_ + n2.1;
 
     };
-    totalClaimable := total_;
+    //totalClaimable := total_;
     return total_;
 
   };
 
-  public shared (message) func emergencySendEyes(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
+  /*func _getUserReward(p : Text) : Nat {
+
+  };*/
+
+  /*public shared (message) func emergencySendEyes(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
     assert (_isAdmin(message.caller));
     var t = await transferEyesToken(to_, quantity_);
     return t;
+  }; */
+  func _isARB(n : Principal) : Bool {
+    if (Principal.toText(n) == arbCanister) {
+      return true;
+    };
+    return false;
+  };
+  public shared (message) func transferEyesARB(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
+    assert (_isARB(message.caller));
+    var r = await transferEyesToken(to_, quantity_ * 2);
+    r;
   };
 
   func transferEyesToken(to_ : Principal, quantity_ : Nat) : async T.TransferResult {

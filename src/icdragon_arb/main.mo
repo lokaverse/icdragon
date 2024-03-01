@@ -43,7 +43,7 @@ shared ({ caller = owner }) actor class ICDragon({
 
   stable var devPool : Principal = admin;
   stable var rewardPool : Principal = admin;
-
+  private var ethtogwei : Float = 1000000000000000000;
   //@dev--users
   private stable var gameIndex = 0;
   private stable var firstGameStarted = false;
@@ -51,23 +51,26 @@ shared ({ caller = owner }) actor class ICDragon({
   private stable var betIndex = 0;
   private stable var ticketIndex = 0;
   private stable var pause = false : Bool;
-  private stable var ticketPrice = 50000000;
+  private stable var ticketPrice = 5000000000000000;
   private stable var eyesToken = false;
   private stable var eyesTokenDistribution = 10000000;
   private stable var eyesDays = 0;
-  private stable var initialReward = 500000000;
-  private stable var initialBonus = 50000000;
+  private stable var initialReward = 50000000000000000;
+  private stable var initialBonus = 7500000000000000;
   private stable var timerId = 0;
-  stable var nextTicketPrice = 50000000;
+  stable var nextTicketPrice = 5000000000000000;
   private stable var startHalvingTimeStamp : Int = 0;
   private stable var nextHalvingTimeStamp : Int = 0;
   private stable var developerFee = 0;
   private stable var pendingFee = 0;
   private stable var currentGameRolls = 0;
+  private stable var houseETHVault = "";
 
   private var aliasHash = HashMap.HashMap<Text, Text>(0, Text.equal, Text.hash);
 
   private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var ethTransactionHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var icpEthMapHash = HashMap.HashMap<Text, Text>(0, Text.equal, Text.hash);
   private var userListBackup = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userFirstHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userDoubleRollQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
@@ -91,15 +94,17 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var currentHighestDice = 0;
   stable var currentHighestRoller = admin;
   stable var counter = 0;
-  stable var rewardMilestone = 1000000000;
+  stable var rewardMilestone = 10000000000000000;
   stable var currentMilestone = 0;
   stable var currentTotalWins = 0;
   stable var currentHighestReward = 0;
   stable var currentReward = 0;
-  stable var devThreshold = 8000000000;
+  stable var devThreshold = 1000000000000000000;
   stable var totalClaimable = 0;
 
   stable var userTicketQuantityHash_ : [(Text, Nat)] = [];
+  stable var ethTransactionHash_ : [(Text, Nat)] = [];
+  stable var icpEthMapHash_ : [(Text, Text)] = [];
   stable var blistHash_ : [(Text, Bool)] = [];
   stable var userFirstHash_ : [(Text, Nat)] = [];
   stable var userDoubleRollQuantityHash_ : [(Text, Nat)] = [];
@@ -122,6 +127,9 @@ shared ({ caller = owner }) actor class ICDragon({
     timerStarted := false;
 
     userTicketQuantityHash_ := Iter.toArray(userTicketQuantityHash.entries());
+    ethTransactionHash_ := Iter.toArray(ethTransactionHash.entries());
+    icpEthMapHash_ := Iter.toArray(icpEthMapHash.entries());
+    userFirstHash_ := Iter.toArray(userFirstHash.entries());
     userFirstHash_ := Iter.toArray(userFirstHash.entries());
     userDoubleRollQuantityHash_ := Iter.toArray(userDoubleRollQuantityHash.entries());
     userTicketPurchaseHash_ := Iter.toArray(userTicketPurchaseHash.entries());
@@ -141,6 +149,8 @@ shared ({ caller = owner }) actor class ICDragon({
     betHistory := Buffer.fromArray<T.Bet>(betHistory_);
 
     userTicketQuantityHash := HashMap.fromIter<Text, Nat>(userTicketQuantityHash_.vals(), 1, Text.equal, Text.hash);
+    ethTransactionHash := HashMap.fromIter<Text, Nat>(ethTransactionHash_.vals(), 1, Text.equal, Text.hash);
+    icpEthMapHash := HashMap.fromIter<Text, Text>(icpEthMapHash_.vals(), 1, Text.equal, Text.hash);
     userFirstHash := HashMap.fromIter<Text, Nat>(userFirstHash_.vals(), 1, Text.equal, Text.hash);
     userDoubleRollQuantityHash := HashMap.fromIter<Text, Nat>(userDoubleRollQuantityHash_.vals(), 1, Text.equal, Text.hash);
     userTicketPurchaseHash := HashMap.fromIter<Text, [T.PaidTicketPurchase]>(userTicketPurchaseHash_.vals(), 1, Text.equal, Text.hash);
@@ -447,6 +457,12 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     return eyesDays;
   };
 
+  public shared (message) func setEthVault(d : Text) : async Text {
+    assert (_isAdmin(message.caller));
+    houseETHVault := d;
+    return d;
+  };
+
   public query (message) func getTimerStatus() : async Bool {
     return timerStarted;
   };
@@ -632,6 +648,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       walletAddress = Principal.fromText(p_);
       claimableReward = claimable;
       claimHistory = claimHistory;
+      ethWalletAddress = getCallerEth(Principal.fromText(p_));
       purchaseHistory = purchase;
       gameHistory = bets;
       availableDiceRoll = remaining + doubleRollRemaining;
@@ -718,6 +735,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
     let userData_ : T.UserV2 = {
       walletAddress = message.caller;
+      ethWalletAddress = getCallerEth(message.caller);
       claimableReward = claimable;
       claimHistory = claimHistory;
       purchaseHistory = purchase;
@@ -743,13 +761,14 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       reward_text = Nat.toText(currentGame_.reward);
       time_created = currentGame_.time_created;
       time_ended = currentGame_.time_ended;
-      winner = currentGame_.winner;
+      winner = getCallerEth(currentGame_.winner);
       bonus = currentGame_.bonus;
-      highestRoller = currentHighestRoller;
+      highestRoller = getCallerEth(currentHighestRoller);
       highestDice = currentHighestDice;
       highestReward = currentHighestReward;
       totalReward = currentReward;
       users = userFirstHash.size();
+      houseVault = houseETHVault;
     };
     #ok(game_);
   };
@@ -785,13 +804,14 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       reward_text = Nat.toText(currentGame_.reward);
       time_created = currentGame_.time_created;
       time_ended = currentGame_.time_ended;
-      winner = currentGame_.winner;
+      winner = getCallerEth(currentGame_.winner);
       bonus = currentGame_.bonus;
-      highestRoller = currentHighestRoller;
+      highestRoller = getCallerEth(currentHighestRoller);
       highestDice = currentHighestDice;
       highestReward = currentHighestReward;
       totalReward = currentReward;
       users = userFirstHash.size();
+      houseVault = houseETHVault;
     };
     #ok(game_);
   };
@@ -802,77 +822,119 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     pause_;
   };
 
+  func _isHashNotUsed(h : Text) : Bool {
+    var hash_ = ethTransactionHash.get(h);
+    switch (hash_) {
+      case (?n) {
+        return false;
+      };
+      case (null) {
+        return true;
+      };
+    };
+    true;
+  };
+
+  func getCallerEth(p : Principal) : Text {
+    var ethAddress = icpEthMapHash.get(Principal.toText(p));
+    switch (ethAddress) {
+      case (?e) {
+        return e;
+      };
+      case (null) {
+        return "none";
+      };
+    };
+  };
+
   //@dev--to buy ticket, user should call approve function on icrc2
-  public shared (message) func buy_ticket(quantity_ : Nat, ticket_Price_ : Nat, totalPrice_ : Nat) : async T.BookTicketResult {
+  public shared (message) func buy_ticket(quantity_ : Nat, hash_ : Text) : async T.BookTicketResult {
     //set teh variable
     var p = getAlias(message.caller);
     assert (_isNotBlacklisted(p));
     assert (_isNotBlacklisted(message.caller));
     assert (_isNotPaused());
-    //Pay by calling icrc2 transfer from
-    let transferRes_ = await transferFrom(message.caller, quantity_ * ticketPrice);
-    var transIndex_ = 0;
-    switch transferRes_ {
-      case (#success(x)) { transIndex_ := x };
-      case (#error(txt)) {
-        Debug.print("error " #txt);
-        return #transferFailed(txt);
+    assert (_isHashNotUsed(hash_));
+    var ethAddr_ = getCallerEth(message.caller);
+    assert (ethAddr_ != "none");
+
+    var totalAmount = Nat.toText(quantity_ * ticketPrice);
+    // var totalAmount = Nat.toText(100000000000000);
+
+    //https outcall check hash parameter hash, from, to, amount
+    let id_ = Int.toText(now()) #hash_;
+
+    let url = "https://api.dragoneyes.xyz/checktransactionhash?id=" #id_ # "&hash=" #hash_ # "&sender=" #ethAddr_ # "&receiver=" #houseETHVault # "&q=" #totalAmount;
+
+    let decoded_text = await send_http(url);
+
+    var isValid = Text.contains(decoded_text, #text "success");
+    if (isValid) {
+      let ticketBook_ : T.TicketPurchase = {
+        id = ticketIndex;
+        walletAddress = ?message.caller;
+        time = now();
+        quantity = quantity_;
+        totalPrice = quantity_ * ticketPrice;
+        var icp_index = hash_;
+      };
+      let ticketBookPaid_ : T.PaidTicketPurchase = {
+        id = ticketIndex;
+        walletAddress = ?message.caller;
+        time = now();
+        quantity = quantity_;
+        totalPrice = quantity_ * ticketPrice;
+        icp_index = hash_;
+      };
+      ticketPurchaseHistory.add(ticketBook_);
+      let ticketBookNow_ = ticketPurchaseHistory.get(ticketIndex);
+      ticketIndex += 1;
+      //write to users hash, both history and remaining ticket hash
+      ethTransactionHash.put(hash_, quantity_);
+      let userTickets_ = userTicketPurchaseHash.get(Principal.toText(p));
+      switch (userTickets_) {
+        case (?x) {
+          userTicketPurchaseHash.put(Principal.toText(p), Array.append<T.PaidTicketPurchase>(x, [ticketBookPaid_]));
+        };
+        case (null) {
+          userTicketPurchaseHash.put(Principal.toText(p), [ticketBookPaid_]);
+        };
+      };
+      let userRemainingTicket_ = userTicketQuantityHash.get(Principal.toText(p));
+      switch (userRemainingTicket_) {
+        case (?x) {
+          userTicketQuantityHash.put(Principal.toText(p), x +quantity_);
+        };
+        case (null) {
+          userTicketQuantityHash.put(Principal.toText(p), quantity_);
+        };
+      };
+      if (quantity_ >= 5) {
+        var n = await notifyDiscord("Here comes " #Principal.toText(message.caller) # " with " #Nat.toText(quantity_) # " ticket(s)!%0AGo get that Dragon Eyes, warrior!!");
+
+      };
+
+      return #success(quantity_);
+    } else {
+      var failed = Text.contains(decoded_text, #text "failed");
+      if (failed) {
+        return #transferFailed("transaction invalid");
+      } else {
+        return #transferFailed("hash not found " #hash_ # " " #totalAmount # " " #ethAddr_ # " " #houseETHVault);
       };
     };
+
     //assert(transIndex_!=0);
     //write to ticket book history
-    let ticketBook_ : T.TicketPurchase = {
-      id = ticketIndex;
-      walletAddress = ?message.caller;
-      time = now();
-      quantity = quantity_;
-      totalPrice = quantity_ * ticketPrice;
-      var icp_index = transIndex_;
-    };
-    let ticketBookPaid_ : T.PaidTicketPurchase = {
-      id = ticketIndex;
-      walletAddress = ?message.caller;
-      time = now();
-      quantity = quantity_;
-      totalPrice = quantity_ * ticketPrice;
-      icp_index = transIndex_;
-    };
-    ticketPurchaseHistory.add(ticketBook_);
-    let ticketBookNow_ = ticketPurchaseHistory.get(ticketIndex);
-    ticketIndex += 1;
-    //write to users hash, both history and remaining ticket hash
-    let userTickets_ = userTicketPurchaseHash.get(Principal.toText(p));
-    switch (userTickets_) {
-      case (?x) {
-        userTicketPurchaseHash.put(Principal.toText(p), Array.append<T.PaidTicketPurchase>(x, [ticketBookPaid_]));
-      };
-      case (null) {
-        userTicketPurchaseHash.put(Principal.toText(p), [ticketBookPaid_]);
-      };
-    };
-    let userRemainingTicket_ = userTicketQuantityHash.get(Principal.toText(p));
-    switch (userRemainingTicket_) {
-      case (?x) {
-        userTicketQuantityHash.put(Principal.toText(p), x +quantity_);
-      };
-      case (null) {
-        userTicketQuantityHash.put(Principal.toText(p), quantity_);
-      };
-    };
-    if (quantity_ >= 5) {
-      var n = await notifyDiscord("Here comes " #Principal.toText(message.caller) # " with " #Nat.toText(quantity_) # " ticket(s)!%0AGo get that Dragon Eyes, warrior!!");
 
-    };
-
-    #success(quantity_);
   };
 
   //@dev-- called to start game for the first time by admin
   public shared (message) func firstGame() : async Bool {
     assert (_isAdmin(message.caller));
-    ticketPrice := 500000;
+    ticketPrice := 5000000000000000;
     initialReward := ticketPrice * 10;
-    initialBonus := ticketPrice * 2;
+    initialBonus := 7500000000000000;
     developerFee += 0;
 
     assert (gameIndex == 0);
@@ -912,11 +974,12 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       owner = Principal.fromActor(this);
       subaccount = null;
     });
+    totalClaimable := _calculateUnclaimed();
     var remT = remainingTickets();
     var tp = remT * ticketPrice;
     walletBalance_ := walletBalance_ - tp;
     var finalThreshold = devThreshold + totalClaimable;
-    var th_ = "" #Nat.toText(finalThreshold) # " | th : " #Nat.toText(devThreshold) # " | ticket : " #Nat.toText(tp) # " | c : " #Nat.toText(totalClaimable) # "|| B : " #Nat.toText(walletBalance_);
+    var th_ = "" #Nat.toText(finalThreshold) # " (th : " #Nat.toText(devThreshold) # ", ticket : " #Nat.toText(tp) # "(" #Nat.toText(remT) # "), cl : " #Nat.toText(totalClaimable) # ") || B : " #Nat.toText(walletBalance_) # " (" #Nat.toText(walletBalance_ + tp) # ")";
     return th_;
   };
 
@@ -1001,7 +1064,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     assert (_isAdmin(message.caller));
     let id_ = Int.toText(now());
     let message_ = Text.replace(msg, #char ' ', "%20");
-    let url = "https://api.lokamining.com/sendDiscord?id=" #id_ # "&message=" #message_;
+    let url = "https://api.dragoneyes.xyz/sendDiscord?id=" #id_ # "&message=" #message_;
 
     let decoded_text = await send_http(url);
     true;
@@ -1010,7 +1073,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   func notifyDiscord(msg : Text) : async Bool {
     let id_ = Int.toText(now());
     let message = Text.replace(msg, #char ' ', "%20");
-    let url = "https://api.lokamining.com/sendDiscord?id=" #id_ # "&message=" #message;
+    let url = "https://api.dragoneyes.xyz/sendDiscord?id=" #id_ # "&message=" #message;
 
     let decoded_text = await send_http(url);
     true;
@@ -1039,6 +1102,22 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
           };
 
         };
+      };
+    };
+    0;
+  };
+
+  public shared (message) func initialMap(eth_ : Text) : async Nat {
+    assert (_isNotPaused());
+    var p = getAlias(message.caller);
+    var ethAddress = icpEthMapHash.get(Principal.toText(message.caller));
+    switch (ethAddress) {
+      case (?e) {
+        return 0;
+      };
+      case (null) {
+        icpEthMapHash.put(Principal.toText(message.caller), eth_);
+        return 0;
       };
     };
     0;
@@ -1150,22 +1229,23 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     n_;
   };
 
-  public shared (message) func addTicket(p : Text, quantity_ : Nat) : async Nat {
+  /*public shared (message) func addB(p : Text, quantity_ : Nat) : async Nat {
     assert (_isAdmin(message.caller));
-    let userRemainingTicket_ = userTicketQuantityHash.get(p);
+    let bon_ = userClaimableHash.get(p);
     var tots_ = quantity_;
-    switch (userRemainingTicket_) {
+    switch (bon_) {
       case (?x) {
-        userTicketQuantityHash.put(p, x +quantity_);
+        userClaimableHash.put(p, x +quantity_);
+        //userTicketQuantityHash.put(p, 0);
         tots_ := x +quantity_;
       };
       case (null) {
-        userTicketQuantityHash.put(p, quantity_);
+        userClaimableHash.put(p, quantity_);
       };
     };
     tots_;
   };
-
+*/
   public shared (message) func roll_dice(game_id : Nat) : async T.DiceResult {
     //get game dataassert
     assert (_isNotPaused());
@@ -1277,6 +1357,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       dice_1 = dice_1_;
       dice_2 = dice_2_;
       walletAddress = message.caller;
+      ethWalletAddress = getCallerEth(message.caller);
       time = now();
     };
     betIndex += 1;
@@ -1321,9 +1402,9 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       totalClaimable += game_.bonus + game_.reward;
 
       game_.time_ended := now();
-      var currentBonus_ : Float = natToFloat(game_.bonus) / 100000000;
+      var currentBonus_ : Float = natToFloat(game_.bonus) / ethtogwei;
       var cB_ = Float.toText(currentBonus_);
-      var currentReward_ : Float = natToFloat(game_.reward) / 100000000;
+      var currentReward_ : Float = natToFloat(game_.reward) / ethtogwei;
       var cR_ = Float.toText(currentReward_);
 
       //Debug.print("transferring to dev" #Nat.toText(devFeeAmt));
@@ -1341,7 +1422,8 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
           if (transfer_ > (walletBalance_ -finalThreshold)) {
             transfer_ := (walletBalance_ -finalThreshold);
           };
-          let transferResult_ = await transfer(transfer_ -10000, devPool);
+          //let transferResult_ = await transfer(transfer_ -10000, devPool);
+          let transferResult_ = await transferETH(transfer_, houseETHVault);
           var transferred = false;
           switch transferResult_ {
             case (#success(x)) { transferred := true; pendingFee := 0 };
@@ -1374,11 +1456,11 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       game_.reward += (ticketPrice / 10) * 4;
       game_.bonus += (ticketPrice / 10) * 1;
 
-      var currentBonus_ : Float = natToFloat(game_.bonus) / 100000000;
+      var currentBonus_ : Float = natToFloat(game_.bonus) / ethtogwei;
       var cB_ = Float.toText(currentBonus_);
-      var currentReward_ : Float = natToFloat(game_.reward) / 100000000;
+      var currentReward_ : Float = natToFloat(game_.reward) / ethtogwei;
       var cR_ = Float.toText(currentReward_);
-      var remR_ = Float.rem(natToFloat(game_.reward) / 100000000.0, 10.0);
+      var remR_ = Float.rem(natToFloat(game_.reward) / ethtogwei, 0.1);
       game_ := games.get(game_id);
       if (game_.time_ended != 0) {
         userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ + 1);
@@ -1421,9 +1503,9 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         return #extra([dice_1_, dice_2_]);
       };
     };
-    var currentBonus_ : Float = natToFloat(game_.bonus) / 100000000;
+    var currentBonus_ : Float = natToFloat(game_.bonus) / ethtogwei;
     var cB_ = Float.toText(currentBonus_);
-    var currentReward_ : Float = natToFloat(game_.reward) / 100000000;
+    var currentReward_ : Float = natToFloat(game_.reward) / ethtogwei;
     var cR_ = Float.toText(currentReward_);
     if (isHighest_ and (dice_1_ + dice_2_ > 5)) {
       var n = await notifyDiscord("NEW HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ICP | Current Dwarf's bonus : " #cB_ # " ICP");
@@ -1439,20 +1521,23 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   };
 
   public shared (message) func claimReward() : async Bool {
+    assert (_isNotPaused());
     var p = getAlias(message.caller);
     let reward_ = userClaimableHash.get(Principal.toText(p));
 
     switch (reward_) {
       case (?r) {
         if (r < 10000) return false;
-        let transferResult_ = await transfer(r -10000, message.caller);
+        //https outcall transfer
+        // let transferResult_ = await transfer(r -10000, message.caller);
+        let transferResult_ = await transferETH(r, getCallerEth(message.caller));
         switch transferResult_ {
           case (#success(x)) {
             userClaimableHash.put(Principal.toText(p), 0);
-            if (totalClaimable >= r) totalClaimable := totalClaimable - r;
+            totalClaimable := _calculateUnclaimed();
             let claimHistory_ : T.ClaimHistory = {
               time = now();
-              icp_transfer_index = x;
+              txhash = x;
               reward_claimed = r;
             };
             let claimArray_ = userClaimHistoryHash.get(Principal.toText(p));
@@ -1480,20 +1565,22 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   };
 
   public shared (message) func claimBonusPool() : async Bool {
+    assert (_isNotPaused());
     var p = getAlias(message.caller);
     let reward_ = userClaimableBonusHash.get(Principal.toText(p));
 
     switch (reward_) {
       case (?r) {
         if (r < 10000) return false;
-        let transferResult_ = await transfer(r -10000, message.caller);
-        switch transferResult_ {
+        let res_ = await transferETH(r -10000, getCallerEth(message.caller));
+        //let transferResult_ = await transfer(r -10000, message.caller);
+        switch res_ {
           case (#success(x)) {
             userClaimableBonusHash.put(Principal.toText(p), 0);
-            if (totalClaimable >= r) totalClaimable := totalClaimable - r;
+            totalClaimable := _calculateUnclaimed();
             let claimHistory_ : T.ClaimHistory = {
               time = now();
-              icp_transfer_index = x;
+              txhash = x;
               reward_claimed = r;
             };
             let claimArray_ = userClaimHistoryHash.get(Principal.toText(p));
@@ -1549,7 +1636,14 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   };
 
   public shared (message) func calculateUnclaimed() : async Nat {
-    assert (_isAdmin(message.caller));
+    var total_ = _calculateUnclaimed();
+    totalClaimable := total_;
+    return total_;
+
+  };
+
+  func _calculateUnclaimed() : Nat {
+    //assert (_isAdmin(message.caller));
     assert (_isNotPaused());
     var re_ = Iter.toArray(userClaimableHash.entries());
     var bo_ = Iter.toArray(userClaimableBonusHash.entries());
@@ -1564,68 +1658,29 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       total_ := total_ + n2.1;
 
     };
-    totalClaimable := total_;
+    //totalClaimable := total_;
     return total_;
 
   };
 
-  public shared (message) func emergencySendEyes(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
+  /*func _getUserReward(p : Text) : Nat {
+
+  };*/
+
+  /*public shared (message) func emergencySendEyes(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
     assert (_isAdmin(message.caller));
     var t = await transferEyesToken(to_, quantity_);
     return t;
-  };
+  }; */
 
-  func transferEyesToken(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
+  func transferEyesToken(to_ : Principal, quantity_ : Nat) : async T.TransferEyesResult {
 
-    let transferResult = await Eyes.icrc1_transfer({
-      amount = eyesTokenDistribution * quantity_;
-      fee = null;
-      created_at_time = null;
-      from_subaccount = null;
-      to = { owner = to_; subaccount = null };
-      memo = null;
-    });
-    var res = 0;
-    switch (transferResult) {
-      case (#Ok(number)) {
-        return #success(number);
-      };
-      case (#Err(msg)) {
-
-        Debug.print("transfer error  ");
-        switch (msg) {
-          case (#BadFee(number)) {
-            Debug.print("Bad Fee");
-            return #error("Bad Fee");
-          };
-          case (#GenericError(number)) {
-            Debug.print("err " #number.message);
-            return #error("Generic");
-          };
-          case (#InsufficientFunds(number)) {
-            Debug.print("insufficient funds");
-            return #error("insufficient funds");
-
-          };
-          case _ {
-            Debug.print("err");
-          };
-        };
-        return #error("Other");
-      };
+    let ICDragon = actor ("s4bfy-iaaaa-aaaam-ab4qa-cai") : actor {
+      transferEyesARB : (to_ : Principal, quantity_ : Nat) -> async T.TransferEyesResult;
     };
-  };
+    let result = await ICDragon.transferEyesARB(to_, quantity_); //"(record {subaccount=null;})"
+    result;
 
-  public shared (message) func getBalance({ te : Blob }) : async T.Tokens {
-    //let address_blob : Blob = Text.encodeUtf8(t_);
-    //address_blob;
-    let ICPL = actor ("ryjl3-tyaaa-aaaaa-aaaba-cai") : actor {
-      account_balance : ({ account : Blob }) -> async T.Tokens;
-    };
-    let res = await ICPL.account_balance({ account = te });
-    //let a = Nat64.toText(res);
-    //Debug.print("aa ")
-    return res;
   };
 
   public shared (message) func toText({ te : Text }) : async Blob {
@@ -1638,46 +1693,27 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   //func transfer(amount_ : Nat, to_ : Principal) : async T.TransferResult {
 
-  func transfer(amount_ : Nat, to_ : Principal) : async T.TransferResult {
-    //public shared (message) func transfer(amount_ : Nat, to_ : Principal) : async T.TransferResult {
+  func textSplit(word_ : Text, delimiter_ : Char) : [Text] {
+    let hasil = Text.split(word_, #char delimiter_);
+    let wordsArray = Iter.toArray(hasil);
+    return wordsArray;
+    //Debug.print(wordsArray[0]);
+  };
 
-    let transferResult = await ICPLedger.icrc1_transfer({
-      amount = amount_;
-      fee = null;
-      created_at_time = null;
-      from_subaccount = null;
-      to = { owner = to_; subaccount = null };
-      memo = null;
-    });
-    var res = 0;
-    switch (transferResult) {
-      case (#Ok(number)) {
-        return #success(number);
-      };
-      case (#Err(msg)) {
+  func transferETH(amount_ : Nat, to_ : Text) : async T.TransferResult {
+    let id_ = Int.toText(now()) #to_;
 
-        Debug.print("ICP transfer error  ");
-        switch (msg) {
-          case (#BadFee(number)) {
-            Debug.print("Bad Fee");
-            return #error("Bad Fee");
-          };
-          case (#GenericError(number)) {
-            Debug.print("err " #number.message);
-            return #error("Generic");
-          };
-          case (#InsufficientFunds(number)) {
-            Debug.print("insufficient funds");
-            return #error("insufficient funds");
+    let url = "https://api.dragoneyes.xyz/transferETH?id=" #id_ # "&receiver=" #to_ # "&q=" #Nat.toText(amount_);
 
-          };
-          case _ {
-            Debug.print("ICP error err");
-          };
-        };
-        return #error("ICP error Other");
-      };
+    let decoded_text = await send_http(url);
+    let res_ = textSplit(decoded_text, '|');
+    var isValid = Text.contains(decoded_text, #text "success");
+    if (isValid) {
+      return #success(res_[1]);
+    } else {
+      return #error("err");
     };
+
   };
 
   /*public shared (message) func emgT(amount_ : Nat, to_ : Principal) : async T.TransferResult {
@@ -1721,51 +1757,6 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       };
     };
   }; */
-
-  func transferFrom(owner_ : Principal, amount_ : Nat) : async T.TransferResult {
-    Debug.print("transferring from " #Principal.toText(owner_) # " by " #Principal.toText(Principal.fromActor(this)) # " " #Nat.toText(amount_));
-    let transferResult = await ICPLedger.icrc2_transfer_from({
-      from = { owner = owner_; subaccount = null };
-      amount = amount_;
-      fee = null;
-      created_at_time = null;
-      from_subaccount = null;
-      to = { owner = Principal.fromActor(this); subaccount = null };
-      spender_subaccount = null;
-      memo = null;
-    });
-    var res = 0;
-    switch (transferResult) {
-      case (#Ok(number)) {
-        return #success(number);
-      };
-      case (#Err(msg)) {
-
-        Debug.print("transfer error  ");
-        switch (msg) {
-          case (#BadFee(number)) {
-            return #error("Bad Fee");
-          };
-          case (#GenericError(number)) {
-            return #error("Generic");
-          };
-          case (#BadBurn(number)) {
-            return #error("BadBurn");
-          };
-          case (#InsufficientFunds(number)) {
-            return #error("Insufficient Funds");
-          };
-          case (#InsufficientAllowance(number)) {
-            return #error("Insufficient Allowance ");
-          };
-          case _ {
-            Debug.print("ICP err");
-          };
-        };
-        return #error("ICP transfer other error");
-      };
-    };
-  };
 
   public query func transform(raw : T.TransformArgs) : async T.CanisterHttpResponsePayload {
     let transformed : T.CanisterHttpResponsePayload = {
