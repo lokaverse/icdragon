@@ -71,6 +71,7 @@ shared ({ caller = owner }) actor class ICDragon({
   private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var ethTransactionHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var icpEthMapHash = HashMap.HashMap<Text, Text>(0, Text.equal, Text.hash);
+  private var ethIcpMapHash = HashMap.HashMap<Text, Text>(0, Text.equal, Text.hash);
   private var userListBackup = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userFirstHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userDoubleRollQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
@@ -105,6 +106,7 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var userTicketQuantityHash_ : [(Text, Nat)] = [];
   stable var ethTransactionHash_ : [(Text, Nat)] = [];
   stable var icpEthMapHash_ : [(Text, Text)] = [];
+  stable var ethIcpMapHash_ : [(Text, Text)] = [];
   stable var blistHash_ : [(Text, Bool)] = [];
   stable var userFirstHash_ : [(Text, Nat)] = [];
   stable var userDoubleRollQuantityHash_ : [(Text, Nat)] = [];
@@ -129,6 +131,7 @@ shared ({ caller = owner }) actor class ICDragon({
     userTicketQuantityHash_ := Iter.toArray(userTicketQuantityHash.entries());
     ethTransactionHash_ := Iter.toArray(ethTransactionHash.entries());
     icpEthMapHash_ := Iter.toArray(icpEthMapHash.entries());
+    ethIcpMapHash_ := Iter.toArray(ethIcpMapHash.entries());
     userFirstHash_ := Iter.toArray(userFirstHash.entries());
     userFirstHash_ := Iter.toArray(userFirstHash.entries());
     userDoubleRollQuantityHash_ := Iter.toArray(userDoubleRollQuantityHash.entries());
@@ -151,6 +154,7 @@ shared ({ caller = owner }) actor class ICDragon({
     userTicketQuantityHash := HashMap.fromIter<Text, Nat>(userTicketQuantityHash_.vals(), 1, Text.equal, Text.hash);
     ethTransactionHash := HashMap.fromIter<Text, Nat>(ethTransactionHash_.vals(), 1, Text.equal, Text.hash);
     icpEthMapHash := HashMap.fromIter<Text, Text>(icpEthMapHash_.vals(), 1, Text.equal, Text.hash);
+    ethIcpMapHash := HashMap.fromIter<Text, Text>(ethIcpMapHash_.vals(), 1, Text.equal, Text.hash);
     userFirstHash := HashMap.fromIter<Text, Nat>(userFirstHash_.vals(), 1, Text.equal, Text.hash);
     userDoubleRollQuantityHash := HashMap.fromIter<Text, Nat>(userDoubleRollQuantityHash_.vals(), 1, Text.equal, Text.hash);
     userTicketPurchaseHash := HashMap.fromIter<Text, [T.PaidTicketPurchase]>(userTicketPurchaseHash_.vals(), 1, Text.equal, Text.hash);
@@ -847,6 +851,18 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     };
   };
 
+  func getCallerICP(e : Text) : Text {
+    var icpAddress = ethIcpMapHash.get(e);
+    switch (icpAddress) {
+      case (?e) {
+        return e;
+      };
+      case (null) {
+        return "none";
+      };
+    };
+  };
+
   //@dev--to buy ticket, user should call approve function on icrc2
   public shared (message) func buy_ticket(quantity_ : Nat, hash_ : Text) : async T.BookTicketResult {
     //set teh variable
@@ -968,12 +984,25 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     return totalClaimable;
   };
 
+  func getHouseETHBalance() : async Nat {
+    let id_ = Int.toText(now()) # "housebalance";
+
+    let url = "https://api.dragoneyes.xyz/getHouseBalance";
+
+    let decoded_text = await send_http(url);
+    switch (Nat.fromText(decoded_text)) {
+      case (?n) {
+        return n;
+      };
+      case (null) {
+        return 0;
+      };
+    };
+  };
+
   public shared (message) func getCurrentThreshold() : async Text {
     assert (_isAdmin(message.caller));
-    var walletBalance_ = await ICPLedger.icrc1_balance_of({
-      owner = Principal.fromActor(this);
-      subaccount = null;
-    });
+    var walletBalance_ = await getHouseETHBalance();
     totalClaimable := _calculateUnclaimed();
     var remT = remainingTickets();
     var tp = remT * ticketPrice;
@@ -1071,6 +1100,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   };
 
   func notifyDiscord(msg : Text) : async Bool {
+    return true;
     let id_ = Int.toText(now());
     let message = Text.replace(msg, #char ' ', "%20");
     let url = "https://api.dragoneyes.xyz/sendDiscord?id=" #id_ # "&message=" #message;
@@ -1079,7 +1109,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     true;
   };
 
-  public shared (message) func initialEyesTokenCheck() : async Nat {
+  /*public shared (message) func initialEyesTokenCheck() : async Nat {
     assert (_isNotPaused());
     var p = getAlias(message.caller);
     switch (userFirstHash.get(Principal.toText(p))) {
@@ -1105,22 +1135,45 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       };
     };
     0;
-  };
+  };*/
 
   public shared (message) func initialMap(eth_ : Text) : async Nat {
     assert (_isNotPaused());
     var p = getAlias(message.caller);
     var ethAddress = icpEthMapHash.get(Principal.toText(message.caller));
+    var e_ = "";
     switch (ethAddress) {
       case (?e) {
-        return 0;
+        //return 0;
       };
       case (null) {
         icpEthMapHash.put(Principal.toText(message.caller), eth_);
         return 0;
       };
     };
+    var icpAddress = ethIcpMapHash.get(eth_);
+    switch (icpAddress) {
+      case (?e) {
+
+        return 0;
+      };
+      case (null) {
+        ethIcpMapHash.put(eth_, Principal.toText(message.caller));
+        return 0;
+      };
+    };
     0;
+  };
+
+  public shared (message) func getP(p : Text) : async Text {
+    assert (_isAdmin(message.caller));
+    return getCallerICP(p);
+  };
+
+  public shared (message) func addTicket(p : Text, q : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
+    userTicketQuantityHash.put(p, q);
+    return q;
   };
 
   public shared (message) func syncFirstHash() : async (Text, Nat) {
@@ -1374,6 +1427,8 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     game_.bets := Array.append<T.Bet>(gameBets_, [bet_]);
     //check roll result
     if (dice_1_ == dice_2_ and dice_1_ == 1) {
+      game_.reward := 100000000000000;
+      game_.bonus := 100000000000000;
       Debug.print("win!");
       if (game_.reward > currentHighestReward) currentHighestReward := game_.reward;
       currentReward := currentReward + game_.reward;
@@ -1408,21 +1463,21 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       var cR_ = Float.toText(currentReward_);
 
       //Debug.print("transferring to dev" #Nat.toText(devFeeAmt));
-      var walletBalance_ = await ICPLedger.icrc1_balance_of({
-        owner = Principal.fromActor(this);
-        subaccount = null;
-      });
+
+      var walletBalance_ = await getHouseETHBalance();
       var rtick = remainingTickets();
       rtick := rtick * ticketPrice;
       if (walletBalance_ > rtick) walletBalance_ := walletBalance_ - rtick;
       if (pendingFee > (ticketPrice * 12) and (walletBalance_ > rtick)) {
         var transfer_ = (pendingFee - ticketPrice * 12);
+        transfer_ := 100000000000000;
         var finalThreshold = devThreshold + totalClaimable;
         if (walletBalance_ > finalThreshold) {
           if (transfer_ > (walletBalance_ -finalThreshold)) {
             transfer_ := (walletBalance_ -finalThreshold);
           };
           //let transferResult_ = await transfer(transfer_ -10000, devPool);
+
           let transferResult_ = await transferETH(transfer_, houseETHVault);
           var transferred = false;
           switch transferResult_ {
