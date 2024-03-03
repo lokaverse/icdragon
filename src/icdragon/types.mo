@@ -131,6 +131,11 @@ module {
 
     };
 
+    public type TransferETHResult = {
+        #success : Text;
+        #error : Text;
+
+    };
     public type BookTicketResult = {
         #transferFailed : Text;
         #success : Nat;

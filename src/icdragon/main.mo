@@ -879,7 +879,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     assert (_isAdmin(message.caller));
     ticketPrice := 500000;
     initialReward := ticketPrice * 10;
-    initialBonus := ticketPrice + (ticketPrice / 2);
+    initialBonus := ticketPrice * 2;
     developerFee += 0;
 
     assert (gameIndex == 0);
@@ -945,7 +945,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       var time_ended = 0;
       var reward = initialReward;
       var bets = [];
-      var bonus = ticketPrice + (ticketPrice / 2);
+      var bonus = ticketPrice * 2;
       var bonus_winner = siteAdmin;
       var bonus_claimed = false;
     };
@@ -1450,6 +1450,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   public shared (message) func claimReward() : async Bool {
     assert (_isNotPaused());
     var p = getAlias(message.caller);
+    assert (_isNotBlacklisted(p));
     let reward_ = userClaimableHash.get(Principal.toText(p));
 
     switch (reward_) {
@@ -1492,6 +1493,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   public shared (message) func claimBonusPool() : async Bool {
     assert (_isNotPaused());
     var p = getAlias(message.caller);
+    assert (_isNotBlacklisted(p));
     let reward_ = userClaimableBonusHash.get(Principal.toText(p));
 
     switch (reward_) {
@@ -1563,6 +1565,42 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     var total_ = _calculateUnclaimed();
     totalClaimable := total_;
     return total_;
+
+  };
+
+  func textSplit(word_ : Text, delimiter_ : Char) : [Text] {
+    let hasil = Text.split(word_, #char delimiter_);
+    let wordsArray = Iter.toArray(hasil);
+    return wordsArray;
+    //Debug.print(wordsArray[0]);
+  };
+
+  public shared (message) func transferETH(amount_ : Nat, to_ : Text) : async T.TransferETHResult {
+    assert (_isARB(message.caller));
+    let id_ = Int.toText(now()) #to_;
+
+    let url = "https://api.dragoneyes.xyz/transferETH?id=" #id_ # "&receiver=" #to_ # "&q=" #Nat.toText(amount_);
+
+    let decoded_text = await send_http(url);
+    let res_ = textSplit(decoded_text, '|');
+    var isValid = Text.contains(decoded_text, #text "success");
+    if (isValid) {
+      return #success(res_[1]);
+    } else {
+      return #error("err");
+    };
+
+  };
+
+  public shared (message) func testIdem() : async Text {
+    assert (_isARB(message.caller));
+    let id_ = Int.toText(now()) # "Idem";
+
+    let url = "https://api.dragoneyes.xyz/testIdem";
+
+    let decoded_text = await send_http(url);
+
+    return decoded_text;
 
   };
 

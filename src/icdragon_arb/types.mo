@@ -130,6 +130,7 @@ module {
     public type TransferResult = {
         #success : Text;
         #error : Text;
+        #reject : Text;
 
     };
 
