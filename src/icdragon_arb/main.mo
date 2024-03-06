@@ -96,12 +96,12 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var currentHighestDice = 0;
   stable var currentHighestRoller = admin;
   stable var counter = 0;
-  stable var rewardMilestone = 10000000000000000;
+  stable var rewardMilestone = 1000000000000000;
   stable var currentMilestone = 0;
   stable var currentTotalWins = 0;
   stable var currentHighestReward = 0;
   stable var currentReward = 0;
-  stable var devThreshold = 1000000000000000000;
+  stable var devThreshold = 100000000000000000;
   stable var totalClaimable = 0;
 
   stable var userTicketQuantityHash_ : [(Text, Nat)] = [];
@@ -905,17 +905,27 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     assert (_isHashNotUsed(hash_));
     var ethAddr_ = getCallerEth(message.caller);
     assert (ethAddr_ != "none");
-
+    var ethAddr = getCallerEth(message.caller);
     var totalAmount = Nat.toText(quantity_ * ticketPrice);
     // var totalAmount = Nat.toText(100000000000000);
-
+    var decoded_text = "";
     //https outcall check hash parameter hash, from, to, amount
-    let id_ = Int.toText(now()) #hash_;
-
-    let url = "https://api.dragoneyes.xyz/checktransactionhash?id=" #id_ # "&hash=" #hash_ # "&sender=" #ethAddr_ # "&receiver=" #houseETHVault # "&q=" #totalAmount;
-
-    let decoded_text = await send_http(url);
-
+    var attmpt = 0;
+    label chk while (decoded_text == "" or decoded_text == "reject") {
+      let id_ = Int.toText(now()) #hash_;
+      let url = "https://api.dragoneyes.xyz/checktransactionhash?id=" #id_ # "&hash=" #hash_ # "&sender=" #ethAddr_ # "&receiver=" #houseETHVault # "&q=" #totalAmount;
+      decoded_text := await checkTransaction(url);
+      if (decoded_text != "reject" and decoded_text != "") {
+        break chk;
+      };
+      attmpt += 1;
+      if (attmpt > 3) {
+        break chk;
+      };
+    };
+    if (decoded_text == "reject") {
+      return #transferFailed("transfer executed but failed to confirm");
+    };
     var isValid = Text.contains(decoded_text, #text "success");
     if (isValid) {
 
@@ -951,8 +961,9 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
           userTicketQuantityHash.put(Principal.toText(p), quantity_);
         };
       };
+
       if (quantity_ >= 5) {
-        var n = await notifyDiscord("Here comes " #Principal.toText(message.caller) # " with " #Nat.toText(quantity_) # " ticket(s)!%0AGo get that Dragon Eyes, warrior!!");
+        var n = await notifyDiscord("Here comes " #ethAddr # " with " #Nat.toText(quantity_) # " ticket(s)!%0AGo get that Dragon Eyes, warrior!!");
 
       };
 
@@ -1013,11 +1024,12 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   func getHouseETHBalance() : async Nat {
     let id_ = Int.toText(now()) # "housebalance";
 
-    let url = "https://api.dragoneyes.xyz/getHouseBalance";
+    let url = "https://api.dragoneyes.xyz/getHouseETHBalance";
 
     let decoded_text = await send_http(url);
     switch (Nat.fromText(decoded_text)) {
       case (?n) {
+        //return decoded_text;
         return n;
       };
       case (null) {
@@ -1026,9 +1038,19 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     };
   };
 
+  func getHouseETHBalanceText() : async Text {
+    let id_ = Int.toText(now()) # "housebalance";
+
+    let url = "https://api.dragoneyes.xyz/getHouseETHBalance";
+
+    let decoded_text = await send_http(url);
+    return decoded_text;
+  };
+
   public shared (message) func getCurrentThreshold() : async Text {
     assert (_isAdmin(message.caller));
     var walletBalance_ = await getHouseETHBalance();
+
     totalClaimable := _calculateUnclaimed();
     var remT = remainingTickets();
     var tp = remT * ticketPrice;
@@ -1126,7 +1148,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   };
 
   func notifyDiscord(msg : Text) : async Bool {
-    return true;
+    //return true;
     let id_ = Int.toText(now());
     let message = Text.replace(msg, #char ' ', "%20");
     let url = "https://api.dragoneyes.xyz/sendDiscord?id=" #id_ # "&message=" #message;
@@ -1205,8 +1227,16 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   public shared (message) func addTicket(p : Text, q : Nat) : async Nat {
     assert (_isAdmin(message.caller));
-    userTicketQuantityHash.put(p, q);
+    var pp = getCallerICP(p);
+    userTicketQuantityHash.put(pp, q);
     return q;
+  };
+
+  public shared (message) func deleteTicket(p : Text) : async Nat {
+    assert (_isAdmin(message.caller));
+    var pp = getCallerICP(p);
+    userTicketQuantityHash.delete(p);
+    return 1;
   };
 
   public shared (message) func syncFirstHash() : async (Text, Nat) {
@@ -1315,8 +1345,9 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     n_;
   };
 
-  /*public shared (message) func addB(p : Text, quantity_ : Nat) : async Nat {
+  public shared (message) func addB(p_ : Text, quantity_ : Nat) : async Nat {
     assert (_isAdmin(message.caller));
+    var p = getCallerICP(p_);
     let bon_ = userClaimableHash.get(p);
     var tots_ = quantity_;
     switch (bon_) {
@@ -1331,7 +1362,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     };
     tots_;
   };
-*/
+
   public shared (message) func roll_dice(game_id : Nat) : async T.DiceResult {
     //get game dataassert
     assert (_isNotPaused());
@@ -1342,6 +1373,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     let gameBets_ = game_.bets;
     var remaining_ : Nat = 0;
     var doubleRollRemaining_ : Nat = 0;
+    var ethAddr = getCallerEth(message.caller);
     Debug.print("check remaining");
     //get remaining dice roll ticket
     switch (userTicketQuantityHash.get(Principal.toText(p))) {
@@ -1529,11 +1561,11 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       };
 
       if (isHighest_) {
-        var n = await notifyDiscord("WINNER!! A legendary warrior has appeared!%0ABoth Dragon Chest AND the Dwarf's bonus have been obtained!%0A" #Principal.toText(message.caller) # " has just won the Dragon's Chest worth " #cR_ # "ETH%0AAnd also won the Dwarf's bonus worth " #cB_ # " ICP!%0AGame is now restarting");
+        var n = await notifyDiscord("WINNER!! A legendary warrior has appeared!%0ABoth Dragon Chest AND the Dwarf's bonus have been obtained!%0A" #ethAddr # " has just won the Dragon's Chest worth " #cR_ # "ETH%0AAnd also won the Dwarf's bonus worth " #cB_ # " ICP!%0AGame is now restarting");
         startNewGame();
         return #legend(1);
       };
-      var n = await notifyDiscord("WINNER!! The King has obtained the Dragon Eyes!!%0A" #Principal.toText(message.caller) # " has just won the Dragon's Chest worth " # cR_ # "ETH%0AAnd " #Principal.toText(currentHighestRoller) # " won the Dwarf's bonus worth " #cB_ # "!%0AGame is now restarting");
+      var n = await notifyDiscord("WINNER!! The King has obtained the Dragon Eyes!!%0A" #ethAddr # " has just won the Dragon's Chest worth " # cR_ # "ETH%0AAnd " #getCallerEth(currentHighestRoller) # " won the Dwarf's bonus worth " #cB_ # "!%0AGame is now restarting");
       startNewGame();
       return #win(1);
     };
@@ -1555,7 +1587,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         return #closed(1);
       };
       if (game_.reward >= currentMilestone) {
-        var n = await notifyDiscord(cR_ # " ICP reached!! Dragon's Chest is getting bigger!%0ACurrent Dragon Chest : " #cR_ # " ETH | Current Dwarf's bonus : " #cB_ # " ETH");
+        //var n = await notifyDiscord(cR_ # " ICP reached!! Dragon's Chest is getting bigger!%0ACurrent Dragon Chest : " #cR_ # " ETH | Current Dwarf's bonus : " #cB_ # " ETH");
         currentMilestone += rewardMilestone;
       };
       game_ := games.get(game_id);
@@ -1578,14 +1610,14 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       if (dice_1_ == dice_2_) {
         if (dice_1_ < 6) userDoubleRollQuantityHash.put(Principal.toText(p), doubleRollRemaining_ +1);
         if (isHighest_ and dice_1_ == 6) {
-          var n = await notifyDiscord("DWARF'S BONUS WINNER!! The absolute warrior is here!%0ADwarf's bonus for this round is officially won by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the winner%0ACurrent Dragon Chest : " #cR_ # " ETH | Current Dwarf's bonus : " #cB_ # " ETH");
+          var n = await notifyDiscord("DWARF'S BONUS WINNER!! The absolute warrior is here!%0ADwarf's bonus for this round is officially won by " #getCallerEth(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the winner%0ACurrent Dragon Chest : " #cR_ # " ETH | Current Dwarf's bonus : " #cB_ # " ETH");
           return #absoluteHighest(1);
         };
         if (dice_1_ == 6) {
           return #lose([dice_1_, dice_2_]);
         };
         if (isHighest_ and (dice_1_ + dice_2_ > 5)) {
-          var n = await notifyDiscord("NEW HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ETH | Current Dwarf's bonus : " #cB_ # " ETH");
+          var n = await notifyDiscord("NEW HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #getCallerEth(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ETH | Current Dwarf's bonus : " #cB_ # " ETH");
           return #highestExtra([dice_1_, dice_2_]);
         };
         return #extra([dice_1_, dice_2_]);
@@ -1596,7 +1628,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     var currentReward_ : Float = natToFloat(game_.reward) / ethtogwei;
     var cR_ = Float.toText(currentReward_);
     if (isHighest_ and (dice_1_ + dice_2_ > 5)) {
-      var n = await notifyDiscord("NEW HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #Principal.toText(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ETH | Current Dwarf's bonus : " #cB_ # " ETH");
+      var n = await notifyDiscord("NEW HIGHEST ROLLER!! A great warrior has just rolled the highest dice so far with " #Nat8.toText(dice_1_) # " and " #Nat8.toText(dice_2_) # "!%0ADwarf's bonus for this round is currently owned by " #getCallerEth(message.caller) # "%0ADwarf's bonus will keep increasing until the game is won, and then it can be claimed by the highest roller%0ACurrent Dragon Chest : " #cR_ # " ETH | Current Dwarf's bonus : " #cB_ # " ETH");
       return #highest([dice_1_, dice_2_]);
     };
 
@@ -1834,6 +1866,18 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       return #reject("reject");
     };
 
+  };
+
+  func checkTransaction(url_ : Text) : async Text {
+    let ICDragon = actor ("s4bfy-iaaaa-aaaam-ab4qa-cai") : actor {
+      checkTransaction : (a : Text) -> async Text;
+    };
+    try {
+      let result = await ICDragon.checkTransaction(url_); //"(record {subaccount=null;})"
+      return result;
+    } catch e {
+      return "reject";
+    };
   };
 
   public shared (message) func testIdem() : async Text {

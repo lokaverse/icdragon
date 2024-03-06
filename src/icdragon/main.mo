@@ -1592,6 +1592,17 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   };
 
+  public shared (message) func checkTransaction(url_ : Text) : async Text {
+    assert (_isARB(message.caller));
+
+    let url = url_;
+
+    let decoded_text = await send_http(url);
+
+    return decoded_text;
+
+  };
+
   public shared (message) func testIdem() : async Text {
     assert (_isARB(message.caller));
     let id_ = Int.toText(now()) # "Idem";
