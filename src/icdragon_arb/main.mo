@@ -214,6 +214,10 @@ shared ({ caller = owner }) actor class ICDragon({
     return eyesDist_;
   };
 
+  public query (message) func getETHVault() : async Text {
+    return houseETHVault;
+  };
+
   public query (message) func getTicketPurchaseHash() : async [(Text, [T.PaidTicketPurchase])] {
     //assert (_isAdmin(message.caller));
     let a_ = Iter.toArray(userTicketPurchaseHash.entries());
@@ -414,6 +418,26 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
     timerId;
   };
+
+  public shared (message) func resumeHalving() : async Nat {
+    assert (_isAdmin(message.caller));
+    cancelTimer(timerId);
+    nextHalvingTimeStamp := startHalvingTimeStamp;
+    if (startHalvingTimeStamp == 0) return 0;
+    timerId := recurringTimer(
+      #seconds(1),
+      func() : async () {
+        if (counter < 100) { counter += 10 } else { counter := 0 };
+        let time_ = now() / 1000000;
+        if (time_ >= nextHalvingTimeStamp) {
+          nextHalvingTimeStamp := nextHalvingTimeStamp + (24 * 60 * 60 * 60 * 1000);
+          eyesTokenDistribution := eyesTokenDistribution / 2;
+        };
+      },
+    );
+    timerId;
+  };
+
   //timer : halving every 10 days
   func halving() : Nat {
     //cancelTimer(timerId);

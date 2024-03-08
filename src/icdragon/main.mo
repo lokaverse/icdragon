@@ -65,6 +65,8 @@ shared ({ caller = owner }) actor class ICDragon({
   private stable var pendingFee = 0;
   private stable var currentGameRolls = 0;
   private stable var arbCanister = "";
+  private stable var xdrCanister = "";
+  private stable var eyesMintingAccount = "";
 
   private var aliasHash = HashMap.HashMap<Text, Text>(0, Text.equal, Text.hash);
 
@@ -161,12 +163,13 @@ shared ({ caller = owner }) actor class ICDragon({
     return tm;
   };
 
-  public shared (message) func getEyesWalletDist() : async [(Text, Nat)] {
+  public shared (message) func getAllEyesDistribution() : async Text {
     assert (_isAdmin(message.caller));
     assert (_isNotPaused());
     var it_ = Iter.toArray(userFirstHash.entries());
     var al_ = Iter.toArray(aliasHash.entries());
     var ct_ = 0;
+    var json = "[";
     var eyesDist_ : [(Text, Nat)] = [];
     for (n in it_.vals()) {
 
@@ -187,14 +190,13 @@ shared ({ caller = owner }) actor class ICDragon({
       });
       if (balance_ > 0) {
         ct_ += 1;
-        eyesDist_ := Array.append(eyesDist_, [(t_, balance_)]);
-        //var f = Array.find<(Text, Text)>(al_, func x = x.1 == t_);
-        //if (f != null) ct_ += 1;
-        //var t = await transferEyesToken(Principal.fromText(t_), 2);
+        // eyesDist_ := Array.append(eyesDist_, [(t_, balance_)]);
+        json := json # " { \"principal\" :\"" #t_ # "\", \"balance\" : " #Nat.toText(balance_) # " },";
       };
 
     };
-    return eyesDist_;
+    json := json # "]";
+    return json;
   };
 
   public query (message) func getTicketPurchaseHash() : async [(Text, [T.PaidTicketPurchase])] {
@@ -367,12 +369,10 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   //@dev timers initialization, must be called every canister upgrades
   public shared (message) func startHalving(n : Int) : async Nat {
-
     assert (_isAdmin(message.caller));
     cancelTimer(timerId);
     startHalvingTimeStamp := n;
     nextHalvingTimeStamp := startHalvingTimeStamp;
-    // Debug.print("stamp " #Int.toText(nextTimeStamp));
     if (startHalvingTimeStamp == 0) return 0;
     timerId := recurringTimer(
       #seconds(1),
@@ -380,21 +380,31 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         if (counter < 100) { counter += 10 } else { counter := 0 };
         let time_ = now() / 1000000;
         if (time_ >= nextHalvingTimeStamp) {
-          //var n_ = now() / 1000000;
           nextHalvingTimeStamp := nextHalvingTimeStamp + (24 * 60 * 60 * 60 * 1000);
           eyesTokenDistribution := eyesTokenDistribution / 2;
-          //counter := 200;
-          //let res = halving();
-
-          //schedulerSecondsInterval := 24 * 60 * 60;
-          //cancelTimer(timerId);
-          //halvingExecution();
-          //timerId := halving();
-
         };
       },
     );
 
+    timerId;
+  };
+
+  public shared (message) func resumeHalving() : async Nat {
+    assert (_isAdmin(message.caller));
+    cancelTimer(timerId);
+    nextHalvingTimeStamp := startHalvingTimeStamp;
+    if (startHalvingTimeStamp == 0) return 0;
+    timerId := recurringTimer(
+      #seconds(1),
+      func() : async () {
+        if (counter < 100) { counter += 10 } else { counter := 0 };
+        let time_ = now() / 1000000;
+        if (time_ >= nextHalvingTimeStamp) {
+          nextHalvingTimeStamp := nextHalvingTimeStamp + (24 * 60 * 60 * 60 * 1000);
+          eyesTokenDistribution := eyesTokenDistribution / 2;
+        };
+      },
+    );
     timerId;
   };
   //timer : halving every 10 days
@@ -486,6 +496,24 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   public shared (message) func setARBCanister(n : Text) : async Text {
     assert (_isAdmin(message.caller));
     arbCanister := n;
+    n;
+  };
+
+  public shared (message) func setXDRCanister(n : Text) : async Text {
+    assert (_isAdmin(message.caller));
+    xdrCanister := n;
+    n;
+  };
+
+  public shared (message) func eyesFaucet(n : Principal, q : Nat) : async Bool {
+    assert (_isXDR(message.caller));
+    var a = await transferEyesToken(n, q);
+    true;
+  };
+
+  public shared (message) func setMintingAccount(n : Text) : async Text {
+    assert (_isAdmin(message.caller));
+    eyesMintingAccount := n;
     n;
   };
 
@@ -1594,11 +1622,16 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   public shared (message) func checkTransaction(url_ : Text) : async Text {
     assert (_isARB(message.caller));
-
     let url = url_;
-
     let decoded_text = await send_http(url);
+    return decoded_text;
 
+  };
+
+  public shared (message) func checkXDRTransaction(url_ : Text) : async Text {
+    assert (_isXDR(message.caller));
+    let url = url_;
+    let decoded_text = await send_http(url);
     return decoded_text;
 
   };
@@ -1636,10 +1669,6 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   };
 
-  /*func _getUserReward(p : Text) : Nat {
-
-  };*/
-
   /*public shared (message) func emergencySendEyes(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
     assert (_isAdmin(message.caller));
     var t = await transferEyesToken(to_, quantity_);
@@ -1651,16 +1680,179 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     };
     return false;
   };
+
+  func _isXDR(n : Principal) : Bool {
+    if (Principal.toText(n) == xdrCanister) {
+      return true;
+    };
+    return false;
+  };
+
   public shared (message) func transferEyesARB(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
     assert (_isARB(message.caller));
-    var r = await transferEyesToken(to_, quantity_ * 2);
+    var r = await transferEyesTokenARB(to_, quantity_ * 2);
     r;
+  };
+
+  public shared (message) func burnEyesForXDRAGON(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
+    assert (_isARB(message.caller));
+    var r = await transferEyesTokenARB(to_, quantity_ * 2);
+    r;
+  };
+
+  public shared (message) func transferXDRAGON(amount_ : Nat, address_ : Text) : async {
+    #success : Text;
+    #error : Text;
+  } {
+    assert (_isXDR(message.caller));
+    let id_ = Int.toText(now()) # "address_";
+
+    let url = "https://api.dragoneyes.xyz/transferX?id=" #id_ # "&targetAddress=" #address_ # "&amount=" #Nat.toText(amount_);
+
+    let decoded_text = await send_http(url);
+
+    let res_ = textSplit(decoded_text, '|');
+    var isValid = Text.contains(decoded_text, #text "success");
+    if (isValid) {
+      return #success(res_[1]);
+    } else {
+      return #error("err");
+    };
+
+    //check caller EYES balance > amount_
+    //check EYES to XDRAGON conversion
+    //https outcall transfer XDRAGON to address
+    //if success burn EYES
+    return #error("no process executed");
+  };
+
+  func transferEyesTokenARB(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
+
+    let transferResult = await Eyes.icrc1_transfer({
+      amount = eyesTokenDistribution * quantity_ + ((quantity_ * eyesTokenDistribution) / 4);
+      fee = null;
+      created_at_time = null;
+      from_subaccount = null;
+      to = { owner = to_; subaccount = null };
+      memo = null;
+    });
+    var res = 0;
+    switch (transferResult) {
+      case (#Ok(number)) {
+        return #success(number);
+      };
+      case (#Err(msg)) {
+
+        Debug.print("transfer error  ");
+        switch (msg) {
+          case (#BadFee(number)) {
+            Debug.print("Bad Fee");
+            return #error("Bad Fee");
+          };
+          case (#GenericError(number)) {
+            Debug.print("err " #number.message);
+            return #error("Generic");
+          };
+          case (#InsufficientFunds(number)) {
+            Debug.print("insufficient funds");
+            return #error("insufficient funds");
+
+          };
+          case _ {
+            Debug.print("err");
+          };
+        };
+        return #error("Other");
+      };
+    };
   };
 
   func transferEyesToken(to_ : Principal, quantity_ : Nat) : async T.TransferResult {
 
     let transferResult = await Eyes.icrc1_transfer({
       amount = eyesTokenDistribution * quantity_;
+      fee = null;
+      created_at_time = null;
+      from_subaccount = null;
+      to = { owner = to_; subaccount = null };
+      memo = null;
+    });
+    var res = 0;
+    switch (transferResult) {
+      case (#Ok(number)) {
+        return #success(number);
+      };
+      case (#Err(msg)) {
+
+        Debug.print("transfer error  ");
+        switch (msg) {
+          case (#BadFee(number)) {
+            Debug.print("Bad Fee");
+            return #error("Bad Fee");
+          };
+          case (#GenericError(number)) {
+            Debug.print("err " #number.message);
+            return #error("Generic");
+          };
+          case (#InsufficientFunds(number)) {
+            Debug.print("insufficient funds");
+            return #error("insufficient funds");
+
+          };
+          case _ {
+            Debug.print("err");
+          };
+        };
+        return #error("Other");
+      };
+    };
+  };
+
+  public shared (message) func transferEyesX(to_ : Principal, amount_ : Nat) : async T.TransferResult {
+    assert (_isXDR(message.caller));
+    let transferResult = await Eyes.icrc1_transfer({
+      amount = amount_;
+      fee = null;
+      created_at_time = null;
+      from_subaccount = null;
+      to = { owner = to_; subaccount = null };
+      memo = null;
+    });
+    var res = 0;
+    switch (transferResult) {
+      case (#Ok(number)) {
+        return #success(number);
+      };
+      case (#Err(msg)) {
+
+        Debug.print("transfer error  ");
+        switch (msg) {
+          case (#BadFee(number)) {
+            Debug.print("Bad Fee");
+            return #error("Bad Fee");
+          };
+          case (#GenericError(number)) {
+            Debug.print("err " #number.message);
+            return #error("Generic");
+          };
+          case (#InsufficientFunds(number)) {
+            Debug.print("insufficient funds");
+            return #error("insufficient funds");
+
+          };
+          case _ {
+            Debug.print("err");
+          };
+        };
+        return #error("Other");
+      };
+    };
+  };
+
+  public shared (message) func reMintEyesToken(to_ : Principal, amount_ : Nat) : async T.TransferResult {
+    assert (_isXDR(message.caller));
+    let transferResult = await Eyes.icrc1_transfer({
+      amount = amount_;
       fee = null;
       created_at_time = null;
       from_subaccount = null;
