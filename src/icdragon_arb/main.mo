@@ -920,6 +920,14 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     ticketIndex_;
   };
 
+  func sendCommission(ethAddress : Text, q : Nat, amt : Nat) : async Nat {
+    let XDragon = actor ("a7gxj-tiaaa-aaaam-acdwa-cai") : actor {
+      addTicketCommission : (ethAddress : Text, q : Nat, amt : Nat) -> async Nat;
+    };
+    let result = await XDragon.addTicketCommission(ethAddress, q, amt); //"(record {subaccount=null;})"
+    result;
+  };
+
   public shared (message) func buy_ticket(quantity_ : Nat, hash_ : Text, index_ : Nat) : async T.BookTicketResult {
     //set teh variable
     var p = getAlias(message.caller);
@@ -990,7 +998,12 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         var n = await notifyDiscord("Here comes " #ethAddr # " with " #Nat.toText(quantity_) # " ticket(s)!%0AGo get that Dragon Eyes, warrior!!");
 
       };
+      var commission = ((quantity_ * ticketPrice) * 5) / 100;
+      try {
+        var a = await sendCommission(ethAddr, quantity_, commission);
+      } catch (e) {
 
+      };
       return #success(quantity_);
     } else {
       var failed = Text.contains(decoded_text, #text "failed");

@@ -1620,6 +1620,23 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   };
 
+  public shared (message) func transferXPotETH(amount_ : Nat, to_ : Text) : async T.TransferETHResult {
+    assert (_isXDR(message.caller));
+    let id_ = Int.toText(now()) #to_ # "xpot";
+
+    let url = "https://api.dragoneyes.xyz/transferXPotETH?id=" #id_ # "&receiver=" #to_ # "&q=" #Nat.toText(amount_);
+
+    let decoded_text = await send_http(url);
+    let res_ = textSplit(decoded_text, '|');
+    var isValid = Text.contains(decoded_text, #text "success");
+    if (isValid) {
+      return #success(res_[1]);
+    } else {
+      return #error("err");
+    };
+
+  };
+
   public shared (message) func checkTransaction(url_ : Text) : async Text {
     assert (_isARB(message.caller));
     let url = url_;
@@ -1711,12 +1728,36 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
     let decoded_text = await send_http(url);
 
-    let res_ = textSplit(decoded_text, '|');
+    let res_ = textSplit(decoded_text, '/');
     var isValid = Text.contains(decoded_text, #text "success");
     if (isValid) {
       return #success(res_[1]);
     } else {
-      return #error("err");
+      return #error(decoded_text # " " #url);
+    };
+
+    //check caller EYES balance > amount_
+    //check EYES to XDRAGON conversion
+    //https outcall transfer XDRAGON to address
+    //if success burn EYES
+    return #error("no process executed");
+  };
+
+  public shared (message) func transferXDRAGONTest(url : Text) : async {
+    #success : Text;
+    #error : Text;
+  } {
+    assert (_isAdmin(message.caller));
+    let id_ = Int.toText(now()) # "address_";
+
+    let decoded_text = await send_http(url);
+
+    let res_ = textSplit(decoded_text, '/');
+    var isValid = Text.contains(decoded_text, #text "success");
+    if (isValid) {
+      return #success(res_[1]);
+    } else {
+      return #error(decoded_text # " " #url);
     };
 
     //check caller EYES balance > amount_
@@ -1888,6 +1929,11 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
         return #error("Other");
       };
     };
+  };
+
+  public query (message) func xdrCommission() : async Nat {
+    assert (_isXDR(message.caller));
+    4 * eyesTokenDistribution;
   };
 
   public shared (message) func getBalance({ te : Blob }) : async T.Tokens {

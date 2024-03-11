@@ -45,8 +45,15 @@ shared ({ caller = owner }) actor class ICDragon({
   private stable var eyesMintingAccount = "";
   private stable var houseETHVault = "";
   private stable var whiteListEyesAmount = 6000000000000;
+  private stable var mintEnabled = false;
+  private stable var minimumMintForReferral = 300000000000;
+  //private stable var pause = false;
 
   private var genesisWhiteList = HashMap.HashMap<Text, Bool>(0, Text.equal, Text.hash);
+  private var mintingTxHash = HashMap.HashMap<Text, T.MintingHash>(0, Text.equal, Text.hash);
+  private var userMintingTxHash = HashMap.HashMap<Text, [Text]>(0, Text.equal, Text.hash);
+  private var txCheckHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userClaimHistoryHash = HashMap.HashMap<Text, [T.ClaimHistory]>(0, Text.equal, Text.hash);
   private var genesisEyesDistribution = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash); //1 for distributed, 0 for not distributed
   private var pandoraEyesDistribution = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash); //1 for distributed, 0 for not distributed
   private var ethTransactionHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
@@ -59,12 +66,22 @@ shared ({ caller = owner }) actor class ICDragon({
   private var invitationCodeHash = HashMap.HashMap<Text, Text>(0, Text.equal, Text.hash); //invitation to ETH address
   private var referralHash = HashMap.HashMap<Text, [T.Referral]>(0, Text.equal, Text.hash);
   private var referrerHash = HashMap.HashMap<Text, Text>(0, Text.equal, Text.hash);
-  private var userReferralFee = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userReferralFee = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash); //1 for  paid, 0 for not paid
+  private var userMintAmount = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userBetHistoryHash = HashMap.HashMap<Text, [T.Bet]>(0, Text.equal, Text.hash);
+  private var userClaimableHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userClaimableReferralEyes = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userTicketCommissionHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userTicketCommissionHistoryHash = HashMap.HashMap<Text, [T.CommissionHistory]>(0, Text.equal, Text.hash);
 
   //stable var transactionHash
 
   stable var genesisWhiteList_ : [(Text, Bool)] = [];
   stable var genesisEyesDistribution_ : [(Text, Nat)] = [];
+  stable var txCheckHash_ : [(Text, Nat)] = [];
+  stable var mintingTxHash_ : [(Text, T.MintingHash)] = [];
+  stable var userMintingTxHash_ : [(Text, [Text])] = [];
   stable var pandoraEyesDistribution_ : [(Text, Nat)] = [];
   stable var ethTransactionHash_ : [(Text, Nat)] = [];
   stable var icpEthMapHash_ : [(Text, Text)] = [];
@@ -76,13 +93,27 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var invitationCodeHash_ : [(Text, Text)] = [];
   stable var referralHash_ : [(Text, [T.Referral])] = [];
   stable var referrerHash_ : [(Text, Text)] = [];
+  stable var userTicketQuantityHash_ : [(Text, Nat)] = [];
   stable var userReferralFee_ : [(Text, Nat)] = []; //1 for paid, 0 for unpaid
+  private var userMintAmount_ : [(Text, Nat)] = []; //1 for paid, 0 for unpaid
+  stable var userClaimableReferralEyes_ : [(Text, Nat)] = []; //1 for paid, 0 for unpaid
+  stable var userBetHistoryHash_ : [(Text, [T.Bet])] = [];
+  stable var userClaimableHash_ : [(Text, Nat)] = [];
+  stable var userClaimHistoryHash_ : [(Text, [T.ClaimHistory])] = [];
+
+  public query (message) func getEYED() : async [(Text, Nat)] {
+    Iter.toArray(genesisEyesDistribution.entries());
+  };
 
   system func preupgrade() {
     genesisWhiteList_ := Iter.toArray(genesisWhiteList.entries());
+    txCheckHash_ := Iter.toArray(txCheckHash.entries());
+    mintingTxHash_ := Iter.toArray(mintingTxHash.entries());
+    userMintingTxHash_ := Iter.toArray(userMintingTxHash.entries());
     genesisEyesDistribution_ := Iter.toArray(genesisEyesDistribution.entries());
     pandoraEyesDistribution_ := Iter.toArray(pandoraEyesDistribution.entries());
     ethTransactionHash_ := Iter.toArray(ethTransactionHash.entries());
+    userTicketQuantityHash_ := Iter.toArray(userTicketQuantityHash.entries());
     icpEthMapHash_ := Iter.toArray(icpEthMapHash.entries());
     ethIcpMapHash_ := Iter.toArray(ethIcpMapHash.entries());
     adminHash_ := Iter.toArray(adminHash.entries());
@@ -94,10 +125,18 @@ shared ({ caller = owner }) actor class ICDragon({
     referralHash_ := Iter.toArray(referralHash.entries());
     referrerHash_ := Iter.toArray(referrerHash.entries());
     userReferralFee_ := Iter.toArray(userReferralFee.entries());
+    userBetHistoryHash_ := Iter.toArray(userBetHistoryHash.entries());
+    userClaimableHash_ := Iter.toArray(userClaimableHash.entries());
+    userClaimHistoryHash_ := Iter.toArray(userClaimHistoryHash.entries());
+    userMintAmount_ := Iter.toArray(userMintAmount.entries());
+    userClaimableReferralEyes_ := Iter.toArray(userClaimableReferralEyes.entries());
 
   };
   system func postupgrade() {
     genesisWhiteList := HashMap.fromIter<Text, Bool>(genesisWhiteList_.vals(), 1, Text.equal, Text.hash);
+    mintingTxHash := HashMap.fromIter<Text, T.MintingHash>(mintingTxHash_.vals(), 1, Text.equal, Text.hash);
+    userMintingTxHash := HashMap.fromIter<Text, [Text]>(userMintingTxHash_.vals(), 1, Text.equal, Text.hash);
+    txCheckHash := HashMap.fromIter<Text, Nat>(txCheckHash_.vals(), 1, Text.equal, Text.hash);
     genesisEyesDistribution := HashMap.fromIter<Text, Nat>(genesisEyesDistribution_.vals(), 1, Text.equal, Text.hash);
     pandoraEyesDistribution := HashMap.fromIter<Text, Nat>(pandoraEyesDistribution_.vals(), 1, Text.equal, Text.hash);
     genesisWhiteList := HashMap.fromIter<Text, Bool>(genesisWhiteList_.vals(), 1, Text.equal, Text.hash);
@@ -112,6 +151,11 @@ shared ({ caller = owner }) actor class ICDragon({
     referralHash := HashMap.fromIter<Text, [T.Referral]>(referralHash_.vals(), 1, Text.equal, Text.hash);
     referrerHash := HashMap.fromIter<Text, Text>(referrerHash_.vals(), 1, Text.equal, Text.hash);
     userReferralFee := HashMap.fromIter<Text, Nat>(userReferralFee_.vals(), 1, Text.equal, Text.hash);
+    userMintAmount := HashMap.fromIter<Text, Nat>(userMintAmount_.vals(), 1, Text.equal, Text.hash);
+    userClaimableReferralEyes := HashMap.fromIter<Text, Nat>(userClaimableReferralEyes_.vals(), 1, Text.equal, Text.hash);
+    userBetHistoryHash := HashMap.fromIter<Text, [T.Bet]>(userBetHistoryHash_.vals(), 1, Text.equal, Text.hash);
+    userClaimableHash := HashMap.fromIter<Text, Nat>(userClaimableHash_.vals(), 1, Text.equal, Text.hash);
+    userClaimHistoryHash := HashMap.fromIter<Text, [T.ClaimHistory]>(userClaimHistoryHash_.vals(), 1, Text.equal, Text.hash);
   };
 
   public shared (message) func clearData() : async () {
@@ -127,6 +171,7 @@ shared ({ caller = owner }) actor class ICDragon({
     userReferralFee := HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
 
   };
+
   public shared (message) func setEthVault(d : Text) : async Text {
     assert (_isAdmin(message.caller));
     houseETHVault := d;
@@ -156,6 +201,12 @@ shared ({ caller = owner }) actor class ICDragon({
       };
     };
     true;
+  };
+
+  public shared (message) func setMint(mint : Bool) : async Bool {
+    assert (_isAdmin(message.caller));
+    mintEnabled := mint;
+    mint;
   };
 
   func toUpper(t : Text) : Text {
@@ -188,9 +239,9 @@ shared ({ caller = owner }) actor class ICDragon({
     "";
   };
 
-  func getReferrer(p : Text) : Text {
+  func getReferrer(ethAddress : Text) : Text {
     // input in ETH wallet
-    switch (referrerHash.get(p)) {
+    switch (referrerHash.get(ethAddress)) {
       case (?i) {
         return i;
       };
@@ -202,13 +253,55 @@ shared ({ caller = owner }) actor class ICDragon({
     "none";
   };
 
-  public shared (message) func addTicketFee(address : Text, quantity : Nat, amount : Nat) : async Nat {
-    assert (_isARB(message.caller));
-    var referrer = getReferrer(getEthAddress(Principal.fromText(address)));
-    if (referrer == "none") return 0;
+  public shared (message) func pauseCanister(pause_ : Bool) : async Bool {
+    assert (_isAdmin(message.caller));
+    pause := pause_;
+    pause_;
+  };
 
+  public shared (message) func addTicketCommission(ethAddress : Text, quantity : Nat, amount : Nat) : async Nat {
+    assert (_isARB(message.caller));
+    //assert (_isReferred(getEthAddress(message.caller)));
+    if (getReferrer(ethAddress) == "none") return 0;
+
+    if (quantity >= 2) {
+      switch (userReferralFee.get(ethAddress)) {
+        case (?x) {
+          if (x == 0) {
+            var rw = await getEyesCommission();
+            var referrerEth_ = getReferrer(ethAddress);
+            switch (userClaimableReferralEyes.get(referrerEth_)) {
+              case (?r) {
+                userClaimableReferralEyes.put(referrerEth_, r +rw);
+                userReferralFee.put(ethAddress, 1);
+              };
+              case (null) {
+                userClaimableReferralEyes.put(referrerEth_, rw);
+                userReferralFee.put(ethAddress, 1);
+              };
+            };
+          };
+        };
+        case (null) {
+
+        };
+      };
+    };
+
+    switch (userTicketCommissionHash.get(getICPAddress(ethAddress))) {
+      case (?n) {
+        if (_isGenesisWhiteList(getReferrer(ethAddress))) {
+          userTicketCommissionHash.put(getICPAddress(ethAddress), n +amount);
+        } else return 0;
+      };
+      case (null) {
+        if (_isGenesisWhiteList(getReferrer(ethAddress))) {
+          userTicketCommissionHash.put(getICPAddress(ethAddress), amount);
+        } else return 0;
+      };
+    };
     //switch(referrer)
-    1;
+    amount;
   };
 
   public shared (message) func addWhiteList(p : Text) : async Nat {
@@ -219,36 +312,44 @@ shared ({ caller = owner }) actor class ICDragon({
 
   public shared (message) func addGenesisDistribution(p : Text) : async Nat {
     assert (_isAdmin(message.caller));
-    genesisEyesDistribution.put(toLower(p), 1);
+    genesisEyesDistribution.put(toLower(p), 0);
     genesisEyesDistribution.size();
   };
 
   public shared (message) func addPandoraDistribution(p : Text) : async Nat {
     assert (_isAdmin(message.caller));
-    pandoraEyesDistribution.put(toLower(p), 1);
+    pandoraEyesDistribution.put(toLower(p), 0);
     pandoraEyesDistribution.size();
   };
 
-  func _isGenesisDistributed(p : Text) : Bool {
+  func _isGenesisDistributed(p : Text) : {
+    #notGenesis : Nat;
+    #notDistributed : Nat;
+    #distributed : Nat;
+  } {
     switch (genesisEyesDistribution.get(p)) {
       case (?n) {
-        if (n == 1) { return true } else return false;
+        if (n == 1) { return #distributed(1) } else return #notDistributed(1);
 
       };
       case (null) {
-        return true;
+        return #notGenesis(1);
       };
     };
   };
 
-  func _isPandoraDistributed(p : Text) : Bool {
-    switch (genesisEyesDistribution.get(p)) {
+  func _isPandoraDistributed(p : Text) : {
+    #notPandora : Nat;
+    #notDistributed : Nat;
+    #distributed : Nat;
+  } {
+    switch (pandoraEyesDistribution.get(p)) {
       case (?n) {
-        if (n == 1) { return true } else return false;
+        if (n == 1) { return #distributed(1) } else return #notDistributed(1);
 
       };
       case (null) {
-        return true;
+        return #notPandora(1);
       };
     };
   };
@@ -335,18 +436,18 @@ shared ({ caller = owner }) actor class ICDragon({
 
   };
 
-  public shared (message) func checkGenesis(p : Text) : async Bool {
+  public shared (message) func checkGenesis(ethAddress : Text) : async Bool {
     assert (_isAdmin(message.caller));
-    return _isGenesisWhiteList(toLower(p));
+    return _isGenesisWhiteList(toLower(ethAddress));
   };
 
-  public shared (message) func lowup(p : Text) : async Text {
+  public shared (message) func lowup(ethAddress : Text) : async Text {
     assert (_isAdmin(message.caller));
-    return toLower(p) # " " #toUpper(p);
+    return toLower(ethAddress) # " " #toUpper(ethAddress);
   };
 
-  func _isGenesisWhiteList(p : Text) : Bool {
-    switch (genesisWhiteList.get(toLower(p))) {
+  func _isGenesisWhiteList(ethAddress : Text) : Bool {
+    switch (genesisWhiteList.get(toLower(ethAddress))) {
       case (?g) {
         return true;
       };
@@ -381,8 +482,8 @@ shared ({ caller = owner }) actor class ICDragon({
     true;
   };
 
-  func _isReferred(p : Text) : Bool {
-    switch (referrerHash.get(p)) {
+  func _isReferred(ethAddress_ : Text) : Bool {
+    switch (referrerHash.get(ethAddress_)) {
       case (?r) {
         return true;
       };
@@ -390,6 +491,14 @@ shared ({ caller = owner }) actor class ICDragon({
         return false;
       };
     };
+  };
+
+  func _isMintEnabled() : Bool {
+    return mintEnabled;
+  };
+
+  public query (message) func isMintEnabled() : async Bool {
+    return mintEnabled;
   };
 
   //assert (_isNotPaused());
@@ -416,13 +525,14 @@ shared ({ caller = owner }) actor class ICDragon({
       };
     };
     var icpAddress = ethIcpMapHash.get(eth_);
+    var icp_ = "";
     switch (icpAddress) {
       case (?e) {
-
+        icp_ := e;
       };
       case (null) {
         ethIcpMapHash.put(eth_, Principal.toText(message.caller));
-
+        icp_ := Principal.toText(message.caller);
       };
     };
 
@@ -432,12 +542,30 @@ shared ({ caller = owner }) actor class ICDragon({
       userGenesisCodeHash.put(eth_, ncode_);
       referrerHash.put(eth_, eth_);
       userReferralFee.put(eth_, 0);
+      let ref_ = [{ ethWallet = eth_; icpWallet = icp_; time = now() }];
+      switch (referralHash.get(getReferrerByCode(code_))) {
+        case (?x) {
+          referralHash.put(getReferrerByCode(code_), Array.append<T.Referral>(x, ref_));
+        };
+        case (null) {
+          referralHash.put(getReferrerByCode(code_), ref_);
+        };
+      };
       return #genesis(ncode_);
     } else {
       invitationCodeHash.put(ncode_, eth_);
       userInvitationCodeHash.put(eth_, ncode_);
       referrerHash.put(eth_, getReferrerByCode(code_));
       userReferralFee.put(eth_, 0);
+      let ref_ = [{ ethWallet = eth_; icpWallet = icp_; time = now() }];
+      switch (referralHash.get(getReferrerByCode(code_))) {
+        case (?x) {
+          referralHash.put(getReferrerByCode(code_), Array.append<T.Referral>(x, ref_));
+        };
+        case (null) {
+          referralHash.put(getReferrerByCode(code_), ref_);
+        };
+      };
       return #invitation(ncode_);
     };
 
@@ -463,17 +591,36 @@ shared ({ caller = owner }) actor class ICDragon({
     };
   };
 
-  public shared (message) func mintXDRAGON(amount_ : Nat, address_ : Text, hash_ : Text, mintFee_ : Nat) : async {
-    #success : Nat;
+  func transferXPotETH(amount_ : Nat, to_ : Text) : async T.TransferResult {
+
+    let ICDragon = actor ("s4bfy-iaaaa-aaaam-ab4qa-cai") : actor {
+      transferXPotETH : (a : Nat, t : Text) -> async T.TransferResult;
+    };
+    try {
+      let result = await ICDragon.transferXPotETH(amount_, to_); //"(record {subaccount=null;})"
+      return result;
+    } catch e {
+      return #reject("reject");
+    };
+
+  };
+
+  public shared (message) func mintXDRAGON(amount_ : Nat) : async {
+    #success : Text;
     #error : Text;
+    #timeout : Text;
   } {
     assert (_isReferred(getEthAddress(message.caller)));
-    assert (_isHashNotUsed(hash_));
-    var xAmount = amount_ / eyesPerXDragon;
+    if (_isAdmin(message.caller) == false) assert (_isMintEnabled());
+    assert (_isGenesisWhiteList(getEthAddress(message.caller)));
+    assert (_isNotPaused());
+    var icpAddr = Principal.toText(message.caller);
+    //assert (_isHashNotUsed(hash_));
+    var xAmount = (amount_ * 1000000000000000000) / eyesPerXDragon;
     var ethAddr_ = getEthAddress(message.caller);
     var decoded_text = "";
     //https outcall check hash parameter hash, from, to, amount
-    var attmpt = 0;
+    /*var attmpt = 0;
     label chk while (decoded_text == "" or decoded_text == "reject") {
       let id_ = Int.toText(now()) #hash_;
       let url = "https://api.dragoneyes.xyz/checktransactionhash?id=" #id_ # "&hash=" #hash_ # "&sender=" #ethAddr_ # "&receiver=" #houseETHVault # "&q=" #Nat.toText(mintFee_);
@@ -491,25 +638,49 @@ shared ({ caller = owner }) actor class ICDragon({
       return #error("mint fee failed to confirm");
     };
     var isValid = Text.contains(decoded_text, #text "success");
-    if (isValid == false) return #error("mint Fee transfer failed");
+    if (isValid == false) return #error("mint Fee transfer failed"); */
 
     var burnRes_ = await burnEyes(message.caller, amount_);
+    var mintingResult = "";
     //var transIndex_ = 0;
     switch burnRes_ {
-      case (#success(x)) {
-        var res_ = await transferXDRAGON(xAmount, address_);
+      case (#success(burnResult)) {
+
+        var res_ = await transferXDRAGON(xAmount, ethAddr_);
         switch (res_) {
-          case (#success(x)) {
-            ethTransactionHash.put(hash_, mintFee_);
-            return #success(xAmount);
+          case (#success(hashResult)) {
+            // ethTransactionHash.put(hash_, mintFee_);
+            mintingResult := hashResult;
+            let mintRequest : T.MintingHash = {
+              eyes = amount_;
+              hash = hashResult;
+              xdragon = xAmount;
+              var validated = false;
+              time = now();
+              icpAddress = icpAddr;
+              var receipt = "";
+
+            };
+            mintingTxHash.put(hashResult, mintRequest);
+
+            switch (userMintingTxHash.get(icpAddr)) {
+              case (?userMintsArray) {
+                userMintingTxHash.put(icpAddr, Array.append<Text>(userMintsArray, [hashResult]));
+              };
+              case (null) {
+                userMintingTxHash.put(icpAddr, ([hashResult]));
+              };
+            };
+
+            return #success(mintingResult);
           };
           case (#error(x)) {
             var a = await reMint(message.caller, amount_);
             return #error(x);
           };
           case (#reject(x)) {
-            var a = await reMint(message.caller, amount_);
-            return #error("canister call rejected");
+            //var a = await reMint(message.caller, amount_);
+            return #timeout(mintingResult);
           };
         };
       };
@@ -517,10 +688,86 @@ shared ({ caller = owner }) actor class ICDragon({
         return #error(txt);
       };
       case (#reject(txt)) {
-        return #error(txt);
+        return #error("burn rejected");
       };
     };
     return #error("no process executed");
+  };
+
+  public shared (message) func updateMintResult(ethAddress_ : Text, hash_ : Text, result_ : Text) : async Nat {
+    assert (_isAdmin(message.caller));
+    var amount_ = 0;
+    var icpAddress_ = "";
+    switch (mintingTxHash.get(hash_)) {
+      case (?x) {
+        x.validated := true;
+        amount_ := x.eyes;
+        icpAddress_ := x.icpAddress;
+        x.receipt := result_;
+      };
+      case (null) {
+        return 0;
+      };
+    };
+
+    var isReferralClaimable = false;
+    switch (userMintAmount.get(icpAddress_)) {
+      case (?n) {
+        userMintAmount.put(icpAddress_, n +amount_);
+        if (n +amount_ > 300000000000) {
+          isReferralClaimable := true;
+        };
+      };
+      case (null) {
+        userMintAmount.put(icpAddress_, amount_);
+        if (amount_ > 300000000000) {
+          isReferralClaimable := true;
+        };
+      };
+    };
+    if (isReferralClaimable) {
+      switch (userReferralFee.get(ethAddress_)) {
+        case (?x) {
+          if (x == 0) {
+            var rw = await getEyesCommission();
+            var referrerEth_ = getReferrer(ethAddress_);
+            switch (userClaimableReferralEyes.get(referrerEth_)) {
+              case (?r) {
+                userClaimableReferralEyes.put(referrerEth_, r +rw);
+                userReferralFee.put(ethAddress_, 1);
+              };
+              case (null) {
+                userClaimableReferralEyes.put(referrerEth_, rw);
+                userReferralFee.put(ethAddress_, 1);
+              };
+            };
+          };
+        };
+        case (null) {
+
+        };
+      };
+    };
+    amount_;
+  };
+
+  func getEyesCommission() : async Nat {
+    let ICDragon = actor ("s4bfy-iaaaa-aaaam-ab4qa-cai") : actor {
+      xdrCommission : () -> async Nat;
+    };
+    try {
+      let result = await ICDragon.xdrCommission(); //"(record {subaccount=null;})"
+      return result;
+    } catch e {
+      return 0;
+    };
+  };
+
+  //public shared(message) func
+
+  public query (message) func getRefs() : async [(Text, [T.Referral])] {
+    assert (_isAdmin(message.caller));
+    return Iter.toArray(referralHash.entries());
   };
 
   func burnEyes(owner_ : Principal, amount_ : Nat) : async T.TransferResult {
@@ -582,13 +829,13 @@ shared ({ caller = owner }) actor class ICDragon({
 
   };
 
-  public shared (message) func faucet(p : Text, q_ : Nat) : async Bool {
+  public shared (message) func faucet(ethAddress : Text, q_ : Nat) : async Bool {
     assert (_isAdmin(message.caller));
     let ICDragon = actor ("s4bfy-iaaaa-aaaam-ab4qa-cai") : actor {
       eyesFaucet : (a : Principal, t : Nat) -> async Bool;
     };
     try {
-      let result = await ICDragon.eyesFaucet(Principal.fromText(getICPAddress(p)), q_); //"(record {subaccount=null;})"
+      let result = await ICDragon.eyesFaucet(Principal.fromText(getICPAddress(ethAddress)), q_); //"(record {subaccount=null;})"
       return result;
     } catch e {
       return false;
@@ -596,16 +843,53 @@ shared ({ caller = owner }) actor class ICDragon({
 
   };
 
-  public shared (message) func executeEyesDistribution(p : Text, q_ : Nat) : async Bool {
-    assert (_isAdmin(message.caller));
+  public shared (message) func checkEyesReward() : async {
+    #distribute : Nat;
+    #none : Nat;
+  } {
+    /*switch (_isPandoraDistributed(getEthAddress(message.caller))) {
+      case (#notDistributed(x)) {
+        var a = await executeEyesDistribution(Principal.toText(message.caller), whiteListEyesAmount);
+        pandoraEyesDistribution.put(getEthAddress(message.caller), 0);
+      };
+      case (#distributed(x)) {
+
+      };
+      case (#notPandora(x)) {
+
+      };
+    }; */
+    switch (_isGenesisDistributed(getEthAddress(message.caller))) {
+
+      case (#notDistributed(x)) {
+        var a = await executeEyesDistribution(Principal.toText(message.caller), whiteListEyesAmount);
+        genesisEyesDistribution.put(getEthAddress(message.caller), 1);
+        return #distribute(whiteListEyesAmount);
+      };
+      case (#distributed(x)) {
+        //var a = await executeEyesDistribution(Principal.toText(message.caller), whiteListEyesAmount);
+        //genesisEyesDistribution.put(getEthAddress(message.caller), 1);
+        return #none(1);
+        //return #none(1);
+
+      };
+      case (#notGenesis(x)) {
+        return #none(2);
+      };
+    };
+    #none(3);
+  };
+
+  func executeEyesDistribution(icpAddress_ : Text, q_ : Nat) : async T.TransferEyesResult {
+    //assert (_isAdmin(message.caller));
     let ICDragon = actor ("s4bfy-iaaaa-aaaam-ab4qa-cai") : actor {
-      transferEyesX : (a : Principal, t : Nat) -> async Bool;
+      transferEyesX : (a : Principal, t : Nat) -> async T.TransferEyesResult;
     };
     try {
-      let result = await ICDragon.transferEyesX(Principal.fromText(getICPAddress(p)), q_); //"(record {subaccount=null;})"
+      let result = await ICDragon.transferEyesX(Principal.fromText(icpAddress_), q_); //"(record {subaccount=null;})"
       return result;
     } catch e {
-      return false;
+      return #error("Panic");
     };
 
   };
@@ -700,11 +984,183 @@ shared ({ caller = owner }) actor class ICDragon({
     1;
   };
 
-  public query (message) func claimXDragonPot() : async Nat {
-    1;
+  public shared (message) func claimXDragonPot() : async Bool {
+    assert (_isNotPaused());
+    assert (_isReferred(getEthAddress(message.caller)));
+    var p = message.caller;
+    //assert (_isNotBlacklisted(p));
+    let reward_ = userClaimableHash.get(Principal.toText(p));
+
+    switch (reward_) {
+      case (?r) {
+        //if (r < 10000) return false;
+        //https outcall transfer
+        // let transferResult_ = await transfer(r -10000, message.caller);
+        let transferResult_ = await transferXPotETH(r, getEthAddress(message.caller));
+        switch transferResult_ {
+          case (#success(x)) {
+            userClaimableHash.put(Principal.toText(p), 0);
+            var n = _calculateUnclaimed();
+            let claimHistory_ : T.ClaimHistory = {
+              time = now();
+              txhash = x;
+              reward_claimed = r;
+            };
+            let claimArray_ = userClaimHistoryHash.get(Principal.toText(p));
+            switch (claimArray_) {
+              case (?c) {
+                userClaimHistoryHash.put(Principal.toText(p), Array.append<T.ClaimHistory>(c, [claimHistory_]));
+              };
+              case (null) {
+                userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
+              };
+            };
+            return true;
+          };
+          case (#error(txt)) {
+            Debug.print("error " #txt);
+            return false;
+          };
+          case (#reject(x)) {
+            userClaimableHash.put(Principal.toText(p), 0);
+            var n = _calculateUnclaimed();
+            let claimHistory_ : T.ClaimHistory = {
+              time = now();
+              txhash = x;
+              reward_claimed = r;
+            };
+            let claimArray_ = userClaimHistoryHash.get(Principal.toText(p));
+            switch (claimArray_) {
+              case (?c) {
+                userClaimHistoryHash.put(Principal.toText(p), Array.append<T.ClaimHistory>(c, [claimHistory_]));
+              };
+              case (null) {
+                userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
+              };
+            };
+            return false;
+
+          };
+        };
+      };
+      case (null) {
+        return false;
+      };
+    };
+    false;
   };
 
-  public query (message) func roll_dice() : async Nat {
+  func calculatePotReward() : async Nat {
+    let id_ = Int.toText(now()) # "potbalance";
+
+    let url = "https://api.dragoneyes.xyz/getPotETHBalance";
+
+    let decoded_text = await send_http(url);
+    switch (Nat.fromText(decoded_text)) {
+      case (?n) {
+        //return decoded_text;
+        var r_ = (n * 99) / 100;
+        var c_ = _calculateUnclaimed();
+        if (r_ > c_) {
+          r_ := r_ -c_;
+        } else {
+          return 0;
+        };
+        if (r_ < 1000000000000000) {
+          return 0;
+        } else {
+          return r_;
+        };
+      };
+      case (null) {
+        return 0;
+      };
+    };
+  };
+
+  public query func isNotPaused() : async Bool {
+    if (pause) return false;
+    true;
+  };
+
+  public shared (message) func roll_dice() : async {
+    #noticket : Nat;
+    #win : Nat;
+    #lose : [Nat8];
+    #noroll : Nat;
+  } {
+    assert (_isReferred(getEthAddress(message.caller)));
+    assert (_isNotPaused());
+    var remaining_ = 0;
+    switch (userTicketQuantityHash.get(Principal.toText(message.caller))) {
+      case (?x) {
+        if (x < 1) return #noticket(1);
+        remaining_ := x;
+      };
+      case (null) {
+        remaining_ := 0;
+        userTicketQuantityHash.put(Principal.toText(message.caller), 0);
+        return #noticket(1);
+      };
+    };
+    var dice_1 = await roll();
+    var dice_2 = await roll();
+    if (dice_1 == dice_2 and dice_1 == 1) {
+      let userReward_ = userClaimableHash.get(Principal.toText(message.caller));
+      var r_ = await calculatePotReward();
+      if (r_ <= 0) return #noroll(2);
+      switch (userReward_) {
+        case (?r) {
+
+          userClaimableHash.put(Principal.toText(message.caller), r + r_);
+          userTicketQuantityHash.put(Principal.toText(message.caller), 0);
+        };
+        case (null) {
+          userClaimableHash.put(Principal.toText(message.caller), r_);
+        };
+      };
+      return #win(1);
+
+    };
+    if (dice_1 == 0 or dice_2 == 0) {
+      return #noroll(1);
+    };
+
+    #lose([dice_1, dice_2]);
+
+  };
+
+  func _calculateUnclaimed() : Nat {
+    //assert (_isAdmin(message.caller));
+    assert (_isNotPaused());
+    var re_ = Iter.toArray(userClaimableHash.entries());
+
+    var total_ = 0;
+    for (n in re_.vals()) {
+
+      total_ := total_ + n.1;
+
+    };
+
+    //totalClaimable := total_;
+    return total_;
+
+  };
+
+  public shared (message) func ticketBint(ethAddr_ : Text) : async Nat {
+    assert (_isAdmin(message.caller));
+    assert (_isReferred(ethAddr_));
+    switch (userTicketQuantityHash.get(getICPAddress(ethAddr_))) {
+      case (?x) {
+        userTicketQuantityHash.put(ethAddr_, x +1);
+        return x +1;
+      };
+      case (null) {
+
+        userTicketQuantityHash.put(ethAddr_, 1);
+        return 1;
+      };
+    };
     1;
   };
 

@@ -12,7 +12,11 @@ module {
         icpWallet : Text;
         time : Int;
     };
-
+    public type CommissionHistory = {
+        buyer : Text;
+        amount : Nat;
+        time : Int;
+    };
     public type Bet = {
         id : Nat;
         game_id : Nat;
@@ -138,6 +142,16 @@ module {
         #error : Text;
         #reject : Text;
 
+    };
+
+    public type MintingHash = {
+        hash : Text;
+        eyes : Nat;
+        xdragon : Nat;
+        icpAddress : Text;
+        var validated : Bool;
+        time : Int;
+        var receipt : Text;
     };
 
     public type TransferEyesResult = {
