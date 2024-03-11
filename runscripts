@@ -1,0 +1,3 @@
+dfx deploy xdragon --argument '(record{admin = principal "2zosz-ithna-3dqa4-crx3i-2gy7e-o3rkp-fa6wk-mczsu-3h7bi-poiym-hae"})' --network ic
+
+dfx canister call  icdragon getCurrentThreshold --network ic
