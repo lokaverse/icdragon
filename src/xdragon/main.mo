@@ -48,6 +48,7 @@ shared ({ caller = owner }) actor class ICDragon({
   private stable var mintEnabled = false;
   private stable var minimumMintForReferral = 300000000000;
   private stable var isGenesisOnly = true;
+  private stable var latestBintBlock = 0;
   //private stable var pause = false;
 
   private var genesisWhiteList = HashMap.HashMap<Text, Bool>(0, Text.equal, Text.hash);
@@ -105,6 +106,12 @@ shared ({ caller = owner }) actor class ICDragon({
   public query (message) func getEYED() : async [(Text, Nat)] {
     assert (_isAdmin(message.caller));
     Iter.toArray(genesisEyesDistribution.entries());
+  };
+
+  public query (message) func getEYEDamount() : async Nat {
+    assert (_isAdmin(message.caller));
+    return genesisEyesDistribution.size();
+    //Iter.toArray(genesisEyesDistribution.entries());
   };
 
   public query (message) func getEYED2() : async [(Text, Nat)] {
@@ -401,6 +408,22 @@ shared ({ caller = owner }) actor class ICDragon({
     };
   };
 
+  public query (message) func isPandoraDistributed(p : Text) : async {
+    #notPandora : Nat;
+    #notDistributed : Nat;
+    #distributed : Nat;
+  } {
+    assert (_isAdmin(message.caller));
+    switch (pandoraEyesDistribution.get(toLower(p))) {
+      case (?n) {
+        if (n == 1) { return #distributed(1) } else return #notDistributed(n);
+
+      };
+      case (null) {
+        return #notPandora(1);
+      };
+    };
+  };
   public shared (message) func getAllWhite() : async [(Text, Bool)] {
     return Iter.toArray(genesisWhiteList.entries());
   };
@@ -652,7 +675,7 @@ shared ({ caller = owner }) actor class ICDragon({
     #error : Text;
     #timeout : Text;
   } {
-    assert (_isReferred(getEthAddress(message.caller)));
+    if (_isGenesisWhiteList(getEthAddress(message.caller)) == false) assert (_isReferred(getEthAddress(message.caller)));
     if (_isAdmin(message.caller) == false) {
       assert (_isMintEnabled());
       if (isGenesisOnly) assert (_isGenesisWhiteList(getEthAddress(message.caller)));
@@ -729,6 +752,7 @@ shared ({ caller = owner }) actor class ICDragon({
         };
       };
       case (#error(txt)) {
+
         return #error(txt);
       };
       case (#reject(txt)) {
@@ -762,6 +786,19 @@ shared ({ caller = owner }) actor class ICDragon({
       };
       case (null) {
         return #no(false);
+      };
+    };
+  };
+
+  public query (message) func getUserMintHash(user_ : Text) : async [Text] {
+    assert (_isAdmin(message.caller));
+    switch (userMintingTxHash.get(user_)) {
+      case (?x) {
+        return x;
+
+      };
+      case (null) {
+        return ["none"];
       };
     };
   };
@@ -940,17 +977,17 @@ shared ({ caller = owner }) actor class ICDragon({
 
   };
 
-  public shared (message) func faucet(ethAddress_ : Text, q_ : Nat) : async Bool {
+  public shared (message) func faucet(ethAddress_ : Text, q_ : Nat) : async T.TransferEyesResult {
     assert (_isAdmin(message.caller));
     var ethAddress = toLower(ethAddress_);
     let ICDragon = actor ("s4bfy-iaaaa-aaaam-ab4qa-cai") : actor {
-      eyesFaucet : (a : Principal, t : Nat) -> async Bool;
+      transferEyesX : (a : Principal, t : Nat) -> async T.TransferEyesResult;
     };
     try {
-      let result = await ICDragon.eyesFaucet(Principal.fromText(getICPAddress(ethAddress)), q_); //"(record {subaccount=null;})"
+      let result = await ICDragon.transferEyesX(Principal.fromText(getICPAddress(ethAddress)), q_); //"(record {subaccount=null;})"
       return result;
     } catch e {
-      return false;
+      return #error("Panic");
     };
 
   };
@@ -963,7 +1000,7 @@ shared ({ caller = owner }) actor class ICDragon({
   };
 
   public shared (message) func batchAddPandora(batchEthAddr : Text) : async Nat {
-
+    assert (_isAdmin(message.caller));
     var rowList = textSplit(batchEthAddr, '.');
     for (row_ in rowList.vals()) {
 
@@ -981,12 +1018,13 @@ shared ({ caller = owner }) actor class ICDragon({
       case (#notDistributed(amountToDistribute)) {
         var a = await executeEyesDistribution(Principal.toText(message.caller), amountToDistribute);
         pandoraEyesDistribution.put(getEthAddress(message.caller), 1);
+        return #distribute(whiteListEyesAmount);
       };
       case (#distributed(x)) {
         return #none(4);
       };
       case (#notPandora(x)) {
-
+        return #none(5);
       };
     };
     switch (_isGenesisDistributed(getEthAddress(message.caller))) {
@@ -1235,6 +1273,8 @@ shared ({ caller = owner }) actor class ICDragon({
     };
     var dice_1 = await roll();
     var dice_2 = await roll();
+    remaining_ := remaining_ - 1;
+    userTicketQuantityHash.put(Principal.toText(message.caller), remaining_);
     if (dice_1 == dice_2 and dice_1 == 1) {
       let userReward_ = userClaimableHash.get(Principal.toText(message.caller));
       var r_ = await calculatePotReward();
@@ -1243,7 +1283,7 @@ shared ({ caller = owner }) actor class ICDragon({
         case (?r) {
 
           userClaimableHash.put(Principal.toText(message.caller), r + r_);
-          userTicketQuantityHash.put(Principal.toText(message.caller), 0);
+
         };
         case (null) {
           userClaimableHash.put(Principal.toText(message.caller), r_);
@@ -1253,6 +1293,7 @@ shared ({ caller = owner }) actor class ICDragon({
 
     };
     if (dice_1 == 0 or dice_2 == 0) {
+      userTicketQuantityHash.put(Principal.toText(message.caller), remaining_ + 1);
       return #noroll(1);
     };
 
@@ -1277,26 +1318,40 @@ shared ({ caller = owner }) actor class ICDragon({
 
   };
 
-  public shared (message) func ticketBint(hash__ : Text) : async Nat {
-    assert (_isAdmin(message.caller));
-    assert (_isReferred(getEthAddress(message.caller)));
-    assert (_isHashNotUsed(hash__));
-    var ethAddr_ = getEthAddress(message.caller);
-    assert (_isReferred(ethAddr_));
-    //https outcall and string rule to check if hash is legit
-    ethTransactionHash.put(hash__, 1);
-    switch (userTicketQuantityHash.get(getICPAddress(ethAddr_))) {
-      case (?x) {
-        userTicketQuantityHash.put(ethAddr_, x +1);
-        return x +1;
-      };
-      case (null) {
+  public query (message) func getLatestBintBlock() : async Nat {
+    return latestBintBlock;
+  };
 
-        userTicketQuantityHash.put(ethAddr_, 1);
-        return 1;
+  public shared (message) func ticketBint(ethAddressTicketArray : Text, lastBlock : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
+    //assert (_isReferred(getEthAddress(message.caller)));
+    var ticketList = textSplit(ethAddressTicketArray, '|');
+    for (row_ in ticketList.vals()) {
+
+      var addr_ = textSplit(row_, ';');
+      var ethAddr_ = toLower(addr_[0]);
+      assert (_isHashNotUsed(addr_[1]));
+      ethTransactionHash.put(addr_[1], 1);
+      switch (userTicketQuantityHash.get(getICPAddress(ethAddr_))) {
+        case (?x) {
+          userTicketQuantityHash.put(getICPAddress(ethAddr_), x +1);
+          return x +1;
+        };
+        case (null) {
+
+          userTicketQuantityHash.put(getICPAddress(ethAddr_), 1);
+          return 1;
+        };
       };
     };
-    1;
+
+    latestBintBlock := lastBlock;
+    latestBintBlock;
+  };
+
+  public query (message) func getAllTickets() : async [(Text, Nat)] {
+    assert (_isAdmin(message.caller));
+    return Iter.toArray(userTicketQuantityHash.entries());
   };
 
   public query func transform(raw : T.TransformArgs) : async T.CanisterHttpResponsePayload {

@@ -157,6 +157,20 @@ shared ({ caller = owner }) actor class ICDragon({
     userListBackup := HashMap.fromIter<Text, Nat>(userListBackup_.vals(), 1, Text.equal, Text.hash);
   };
 
+  public query (message) func getTicketPurchase(addr : Text) : async {
+    #none : Nat;
+    #ok : [T.PaidTicketPurchase];
+  } {
+    assert (_isAdmin(message.caller));
+    switch (userTicketPurchaseHash.get(addr)) {
+      case (?n) {
+        return #ok(n);
+      };
+      case (null) {
+        return #none(0);
+      };
+    };
+  };
   public query (message) func getTimeNow() : async Int {
     assert (_isAdmin(message.caller));
     let tm = now() / 1000000;
@@ -960,7 +974,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     gameIndex += 1;
     ticketPrice := nextTicketPrice;
     currentHighestRoller := siteAdmin;
-    initialReward := ticketPrice * 10;
+    initialReward := ticketPrice * 8;
     currentMilestone := rewardMilestone;
     currentHighestDice := 0;
     currentGameRolls := 0;
@@ -973,7 +987,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       var time_ended = 0;
       var reward = initialReward;
       var bets = [];
-      var bonus = ticketPrice * 2;
+      var bonus = ticketPrice + ticketPrice / 2;
       var bonus_winner = siteAdmin;
       var bonus_claimed = false;
     };
@@ -1371,8 +1385,8 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       var rtick = remainingTickets();
       rtick := rtick * ticketPrice;
       if (walletBalance_ > rtick) walletBalance_ := walletBalance_ - rtick;
-      if (pendingFee > (ticketPrice * 12) and (walletBalance_ > rtick)) {
-        var transfer_ = (pendingFee - ticketPrice * 12);
+      if (pendingFee > (ticketPrice * 9 + ticketPrice / 2) and (walletBalance_ > rtick)) {
+        var transfer_ = (pendingFee - ((ticketPrice * 9 + ticketPrice / 2)));
         var finalThreshold = devThreshold + totalClaimable;
         if (walletBalance_ > finalThreshold) {
           if (transfer_ > (walletBalance_ -finalThreshold)) {
@@ -1683,6 +1697,15 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     };
     //totalClaimable := total_;
     return total_;
+
+  };
+
+  public query (message) func getAllRewards() : async [(Text, Nat)] {
+    assert (_isAdmin(message.caller));
+    assert (_isNotPaused());
+    var re_ = Iter.toArray(userClaimableHash.entries());
+    var bo_ = Iter.toArray(userClaimableBonusHash.entries());
+    return re_;
 
   };
 

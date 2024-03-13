@@ -1101,7 +1101,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     gameIndex += 1;
     ticketPrice := nextTicketPrice;
     currentHighestRoller := siteAdmin;
-    initialReward := ticketPrice * 10;
+    initialReward := ticketPrice * 8;
     currentMilestone := rewardMilestone;
     currentHighestDice := 0;
     currentGameRolls := 0;
@@ -1114,7 +1114,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
       var time_ended = 0;
       var reward = initialReward;
       var bets = [];
-      var bonus = ticketPrice * 2;
+      var bonus = ticketPrice + ticketPrice / 2;
       var bonus_winner = siteAdmin;
       var bonus_claimed = false;
     };
