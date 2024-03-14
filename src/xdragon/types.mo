@@ -19,7 +19,6 @@ module {
     };
     public type Bet = {
         id : Nat;
-        game_id : Nat;
         walletAddress : Principal;
         ethWalletAddress : Text;
         dice_1 : Nat8;

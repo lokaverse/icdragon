@@ -1061,7 +1061,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   func getHouseETHBalance() : async Nat {
     let id_ = Int.toText(now()) # "housebalance";
 
-    let url = "https://api.dragoneyes.xyz/getHouseETHBalance";
+    let url = "https://api.dragoneyes.xyz/getHouseETHBalance?id=" #id_;
 
     let decoded_text = await send_http(url);
     switch (Nat.fromText(decoded_text)) {

@@ -49,6 +49,11 @@ shared ({ caller = owner }) actor class ICDragon({
   private stable var minimumMintForReferral = 300000000000;
   private stable var isGenesisOnly = true;
   private stable var latestBintBlock = 0;
+  private stable var betIndex = 0;
+  private stable var potETHBalance = 0;
+  private stable var adminPotReserve = 0;
+  private stable var lastPotWinner = "";
+  private stable var round = 0;
   //private stable var pause = false;
 
   private var genesisWhiteList = HashMap.HashMap<Text, Bool>(0, Text.equal, Text.hash);
@@ -114,6 +119,7 @@ shared ({ caller = owner }) actor class ICDragon({
     //Iter.toArray(genesisEyesDistribution.entries());
   };
 
+
   public query (message) func getEYED2() : async [(Text, Nat)] {
     assert (_isAdmin(message.caller));
     Iter.toArray(pandoraEyesDistribution.entries());
@@ -168,6 +174,7 @@ shared ({ caller = owner }) actor class ICDragon({
     userClaimableReferralEyes := HashMap.fromIter<Text, Nat>(userClaimableReferralEyes_.vals(), 1, Text.equal, Text.hash);
     userBetHistoryHash := HashMap.fromIter<Text, [T.Bet]>(userBetHistoryHash_.vals(), 1, Text.equal, Text.hash);
     userClaimableHash := HashMap.fromIter<Text, Nat>(userClaimableHash_.vals(), 1, Text.equal, Text.hash);
+    userTicketQuantityHash := HashMap.fromIter<Text, Nat>(userTicketQuantityHash_.vals(), 1, Text.equal, Text.hash);
     userClaimHistoryHash := HashMap.fromIter<Text, [T.ClaimHistory]>(userClaimHistoryHash_.vals(), 1, Text.equal, Text.hash);
   };
 
@@ -183,6 +190,13 @@ shared ({ caller = owner }) actor class ICDragon({
     referrerHash := HashMap.HashMap<Text, Text>(0, Text.equal, Text.hash);
     userReferralFee := HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
 
+  };
+
+  public shared (message) func setOne() : async Nat {
+    assert(_isAdmin(message.caller));
+    userClaimableHash := HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+    
+    1;
   };
 
   public shared (message) func setEthVault(d : Text) : async Text {
@@ -305,6 +319,7 @@ shared ({ caller = owner }) actor class ICDragon({
     if (getReferrer(ethAddress__) == "none") return 0;
     //THIS IS FOR DETECTING EYES REFERRAL, NOT THE 5% TICKET COMMISSION
     if (quantity >= 2) {
+      // will only give $EYES commission if the user buy >= 2 tickets
       switch (userReferralFee.get(ethAddress__)) {
         case (?x) {
           if (x == 0) {
@@ -313,7 +328,7 @@ shared ({ caller = owner }) actor class ICDragon({
             switch (userClaimableReferralEyes.get(referrerEth_)) {
               case (?r) {
                 userClaimableReferralEyes.put(referrerEth_, r +rw);
-                userReferralFee.put(ethAddress__, 1);
+                userReferralFee.put(ethAddress__, 1); //set flag to one, means it is no longer subject to give
               };
               case (null) {
                 userClaimableReferralEyes.put(referrerEth_, rw);
@@ -330,8 +345,9 @@ shared ({ caller = owner }) actor class ICDragon({
 
     //NOWWW THIS PART IS ACTUALLY FOR THE 5% COMMISSION CALCULATION, ONLY FOR GENESIS HOLDER
     var referrerEth_ = getReferrer(ethAddress__);
-    var referrerICP_ = getICPAddress(referrerEth_);
+    var referrerICP_ = getICPAddress(referrerEth_); //get the ICP address of that one referree who will receive the commission
     if (_isGenesisWhiteList(referrerEth_)) {
+      // only give commission if genesis
       let commissionHistory_ : T.CommissionHistory = {
         buyer = ethAddress__;
         amount = amount;
@@ -1152,7 +1168,23 @@ shared ({ caller = owner }) actor class ICDragon({
     1;
   };
 
-  public shared (message) func claimXDragonPot() : async Bool {
+  public query(message) func getClaimables() : async {#dragonpot : Nat}{
+    assert(_isReferred(getEthAddress(message.caller)));
+    assert(_isNotPaused());
+    switch(userClaimableHash.get(Principal.toText(message.caller))){
+      case(?n){
+        return #dragonpot(n);
+      };case (null) {
+return #dragonpot(0);
+      };
+    };
+  };
+
+  public query(message) func shh() : async [(Text,[T.ClaimHistory])] {
+    return Iter.toArray(userClaimHistoryHash.entries());
+  };
+
+  public shared (message) func claimXDragonPot() : async {#error : Text; #success : Text ; #reject : Text; #none : Nat} {
     assert (_isNotPaused());
     assert (_isReferred(getEthAddress(message.caller)));
     var p = message.caller;
@@ -1168,7 +1200,7 @@ shared ({ caller = owner }) actor class ICDragon({
         switch transferResult_ {
           case (#success(x)) {
             userClaimableHash.put(Principal.toText(p), 0);
-            var n = _calculateUnclaimed();
+            // var n = _calculateUnclaimed();
             let claimHistory_ : T.ClaimHistory = {
               time = now();
               txhash = x;
@@ -1183,15 +1215,15 @@ shared ({ caller = owner }) actor class ICDragon({
                 userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
               };
             };
-            return true;
+            return #success("Success");
           };
           case (#error(txt)) {
             Debug.print("error " #txt);
-            return false;
+            return #error(txt);
           };
           case (#reject(x)) {
             userClaimableHash.put(Principal.toText(p), 0);
-            var n = _calculateUnclaimed();
+            //var n = _calculateUnclaimed();
             let claimHistory_ : T.ClaimHistory = {
               time = now();
               txhash = x;
@@ -1206,38 +1238,78 @@ shared ({ caller = owner }) actor class ICDragon({
                 userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
               };
             };
-            return false;
+            return #reject(x);
 
           };
         };
       };
       case (null) {
-        return false;
+        return #none(0);
       };
     };
-    false;
+    #none(0);
+  };
+
+  public shared (message) func ticketBintRequest() : async Nat {
+    assert (_isNotPaused());
+    assert (_isReferred(getEthAddress(message.caller)));
+    var id_ = Int.toText(now()) # "ticketbintrequest";
+    var url_ = "https://api.dragoneyes.xyz/checkXDragonEvent";
+    1;
+  };
+
+  public shared (message) func updatePotETHBalance(n : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
+    potETHBalance := n;
+    n;
+  };
+
+  public query (message) func getPotETHBalance() : async Nat {
+    return potETHBalance - (_calculateUnclaimed() + 5000000000000000);
+  };
+
+  public shared(message) func ddt(ethAddr : Text, q : Nat) : async Nat {
+    assert(_isAdmin(message.caller));
+    var icpAddr = getICPAddress(ethAddr);
+    var p = Principal.fromText(icpAddr);
+   switch (userTicketQuantityHash.get(icpAddr)) {
+      case (?x) {
+        userTicketQuantityHash.put(icpAddr,q);
+      };
+      case (null) {
+        
+      };
+    };
+    return 0;
+  };
+  public shared(message) func setGasReserve(g : Nat) : async Nat {
+    adminPotReserve := g;
+    adminPotReserve;
   };
 
   func calculatePotReward() : async Nat {
     let id_ = Int.toText(now()) # "potbalance";
 
-    let url = "https://api.dragoneyes.xyz/getPotETHBalance";
+    let url = "https://api.dragoneyes.xyz/getPotETHBalance?id="#id_;
 
     let decoded_text = await send_http(url);
     switch (Nat.fromText(decoded_text)) {
       case (?n) {
-        //return decoded_text;
-        var r_ = (n * 99) / 100;
-        var c_ = _calculateUnclaimed();
-        if (r_ > c_) {
-          r_ := r_ -c_;
+
+        var reward_ = 0;
+        var unclaimed_ = _calculateUnclaimed();
+        potETHBalance := n;
+        if (n > (unclaimed_ + 5000000000000000)) {
+          reward_ := ((n - unclaimed_)) - 5000000000000000;
+          //adminPotReserve := adminPotReserve + 500000000000000;
         } else {
           return 0;
         };
-        if (r_ < 1000000000000000) {
+        if (reward_ < 5000000000000000) {
+          
           return 0;
         } else {
-          return r_;
+          return reward_;
         };
       };
       case (null) {
@@ -1273,17 +1345,42 @@ shared ({ caller = owner }) actor class ICDragon({
     };
     var dice_1 = await roll();
     var dice_2 = await roll();
-    remaining_ := remaining_ - 1;
-    userTicketQuantityHash.put(Principal.toText(message.caller), remaining_);
+   
+    if (dice_1 == 0 or dice_2 == 0) {
+      userTicketQuantityHash.put(Principal.toText(message.caller), remaining_ + 1);
+      return #noroll(1);
+    } else {
+      remaining_ := remaining_ - 1;
+      userTicketQuantityHash.put(Principal.toText(message.caller), remaining_);
+      let bet_ : T.Bet = {
+        id = betIndex;
+        dice_1 = dice_1;
+        dice_2 = dice_2;
+        walletAddress = message.caller;
+        ethWalletAddress = getEthAddress(message.caller);
+        time = now();
+      };
+      betIndex += 1;
+      var userBets_ = userBetHistoryHash.get(Principal.toText(message.caller));
+      switch (userBets_) {
+        case (?u) {
+          userBetHistoryHash.put(Principal.toText(message.caller), Array.append<T.Bet>(u, [bet_]));
+        };
+        case (null) {
+          userBetHistoryHash.put(Principal.toText(message.caller), [bet_]);
+        };
+      };
+    };
     if (dice_1 == dice_2 and dice_1 == 1) {
+      // check if WIN
       let userReward_ = userClaimableHash.get(Principal.toText(message.caller));
       var r_ = await calculatePotReward();
-      if (r_ <= 0) return #noroll(2);
+      if (r_ <= 0){
+userTicketQuantityHash.put(Principal.toText(message.caller), remaining_ + 1);
+      return #noroll(2);}; // if reward is too small, return noroll and dont substract
       switch (userReward_) {
         case (?r) {
-
           userClaimableHash.put(Principal.toText(message.caller), r + r_);
-
         };
         case (null) {
           userClaimableHash.put(Principal.toText(message.caller), r_);
@@ -1291,10 +1388,6 @@ shared ({ caller = owner }) actor class ICDragon({
       };
       return #win(1);
 
-    };
-    if (dice_1 == 0 or dice_2 == 0) {
-      userTicketQuantityHash.put(Principal.toText(message.caller), remaining_ + 1);
-      return #noroll(1);
     };
 
     #lose([dice_1, dice_2]);
@@ -1322,31 +1415,86 @@ shared ({ caller = owner }) actor class ICDragon({
     return latestBintBlock;
   };
 
+  public shared (message) func resetBintBlock() : async Nat {
+    assert (_isAdmin(message.caller));
+    userTicketQuantityHash := HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+    latestBintBlock := 0;
+    return latestBintBlock;
+  };
+
   public shared (message) func ticketBint(ethAddressTicketArray : Text, lastBlock : Nat) : async Nat {
     assert (_isAdmin(message.caller));
     //assert (_isReferred(getEthAddress(message.caller)));
     var ticketList = textSplit(ethAddressTicketArray, '|');
+    //if (lastBlock <= latestBintBlock) return 0;
+    //return ticketList;
+    var count = 0;
     for (row_ in ticketList.vals()) {
 
-      var addr_ = textSplit(row_, ';');
+      var addr_ = textSplit(row_, '/');
+
+      var ethAddr_ = toLower(addr_[0]);
+      var amt_ : Nat = 0;
+      switch (Nat.fromText(addr_[2])) {
+        case (?t) {
+          amt_ := t;
+        };
+        case (null) {
+          amt_ := 0;
+        };
+      };
+      if (_isHashNotUsed(addr_[1]) or latestBintBlock == 0) {
+        count += 1;
+        ethTransactionHash.put(addr_[1], 1);
+        switch (userTicketQuantityHash.get(getICPAddress(ethAddr_))) {
+          case (?x) {
+            var a_ = x +amt_;
+            if (latestBintBlock == 0) {
+              //a_ := amt_;
+            };
+            userTicketQuantityHash.put(getICPAddress(ethAddr_), a_);
+            // return x +1;
+          };
+          case (null) {
+
+            userTicketQuantityHash.put(getICPAddress(ethAddr_), amt_);
+            //return 1;
+          };
+        };
+      };
+    };
+
+    latestBintBlock := lastBlock;
+    count;
+  };
+
+  public shared (message) func splitBint(ethAddressTicketArray : Text) : async [Text] {
+    assert (_isAdmin(message.caller));
+    //assert (_isReferred(getEthAddress(message.caller)));
+    var ticketList = textSplit(ethAddressTicketArray, '|');
+    //return ticketList;
+    var count = 0;
+    for (row_ in ticketList.vals()) {
+
+      var addr_ = textSplit(row_, '/');
+      count := count + 1;
       var ethAddr_ = toLower(addr_[0]);
       assert (_isHashNotUsed(addr_[1]));
       ethTransactionHash.put(addr_[1], 1);
       switch (userTicketQuantityHash.get(getICPAddress(ethAddr_))) {
         case (?x) {
           userTicketQuantityHash.put(getICPAddress(ethAddr_), x +1);
-          return x +1;
+          // return x +1;
         };
         case (null) {
 
           userTicketQuantityHash.put(getICPAddress(ethAddr_), 1);
-          return 1;
+          //return 1;
         };
       };
     };
 
-    latestBintBlock := lastBlock;
-    latestBintBlock;
+    return [""];
   };
 
   public query (message) func getAllTickets() : async [(Text, Nat)] {
