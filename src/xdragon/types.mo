@@ -26,6 +26,27 @@ module {
         time : Int;
     };
 
+    public type Claimables = {
+        dragonpot : Nat;
+        daily : Nat;
+    };
+
+    public type UserDistribution = {
+        icpAddress : Text;
+        day : Nat;
+        time : Int;
+        ethAddress : Text;
+        nft : Nat;
+        amount : Nat;
+    };
+
+    public type DailyDistribution = {
+        amount : Nat;
+        nft : Nat;
+        holder : Nat;
+        time : Int;
+    };
+
     public type ICPTransferArgs = {
 
         to : Blob;

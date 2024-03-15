@@ -54,6 +54,8 @@ shared ({ caller = owner }) actor class ICDragon({
   private stable var adminPotReserve = 0;
   private stable var lastPotWinner = "";
   private stable var round = 0;
+  private stable var gasFeeThreshold = 5000000000000000;
+  private stable var distributionDay = 0;
   //private stable var pause = false;
 
   private var genesisWhiteList = HashMap.HashMap<Text, Bool>(0, Text.equal, Text.hash);
@@ -78,9 +80,12 @@ shared ({ caller = owner }) actor class ICDragon({
   private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userBetHistoryHash = HashMap.HashMap<Text, [T.Bet]>(0, Text.equal, Text.hash);
   private var userClaimableHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+  private var userClaimableDistributionHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userClaimableReferralEyes = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
   private var userTicketCommissionHash = HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash); // total claimable amount of ETH, mapped to ICP address of a referrer
   private var userTicketCommissionHistoryHash = HashMap.HashMap<Text, [T.CommissionHistory]>(0, Text.equal, Text.hash);
+  private var dailyDistributionHistoryHash = HashMap.HashMap<Nat, T.DailyDistribution>(0, Nat.equal, Hash.hash);
+  private var userDailyDistributionHistoryHash = HashMap.HashMap<Text, [T.UserDistribution]>(0, Text.equal, Text.hash);
 
   //stable var transactionHash
 
@@ -106,7 +111,9 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var userClaimableReferralEyes_ : [(Text, Nat)] = []; //1 for paid, 0 for unpaid
   stable var userBetHistoryHash_ : [(Text, [T.Bet])] = [];
   stable var userClaimableHash_ : [(Text, Nat)] = [];
+  stable var userClaimableDistributionHash_ : [(Text, Nat)] = [];
   stable var userClaimHistoryHash_ : [(Text, [T.ClaimHistory])] = [];
+  stable var dailyDistributionHistoryHash_ : [(Text, Nat)] = [];
 
   public query (message) func getEYED() : async [(Text, Nat)] {
     assert (_isAdmin(message.caller));
@@ -118,7 +125,6 @@ shared ({ caller = owner }) actor class ICDragon({
     return genesisEyesDistribution.size();
     //Iter.toArray(genesisEyesDistribution.entries());
   };
-
 
   public query (message) func getEYED2() : async [(Text, Nat)] {
     assert (_isAdmin(message.caller));
@@ -146,6 +152,7 @@ shared ({ caller = owner }) actor class ICDragon({
     userReferralFee_ := Iter.toArray(userReferralFee.entries());
     userBetHistoryHash_ := Iter.toArray(userBetHistoryHash.entries());
     userClaimableHash_ := Iter.toArray(userClaimableHash.entries());
+    userClaimableDistributionHash_ := Iter.toArray(userClaimableDistributionHash.entries());
     userClaimHistoryHash_ := Iter.toArray(userClaimHistoryHash.entries());
     userMintAmount_ := Iter.toArray(userMintAmount.entries());
     userClaimableReferralEyes_ := Iter.toArray(userClaimableReferralEyes.entries());
@@ -174,6 +181,7 @@ shared ({ caller = owner }) actor class ICDragon({
     userClaimableReferralEyes := HashMap.fromIter<Text, Nat>(userClaimableReferralEyes_.vals(), 1, Text.equal, Text.hash);
     userBetHistoryHash := HashMap.fromIter<Text, [T.Bet]>(userBetHistoryHash_.vals(), 1, Text.equal, Text.hash);
     userClaimableHash := HashMap.fromIter<Text, Nat>(userClaimableHash_.vals(), 1, Text.equal, Text.hash);
+    userClaimableDistributionHash := HashMap.fromIter<Text, Nat>(userClaimableDistributionHash_.vals(), 1, Text.equal, Text.hash);
     userTicketQuantityHash := HashMap.fromIter<Text, Nat>(userTicketQuantityHash_.vals(), 1, Text.equal, Text.hash);
     userClaimHistoryHash := HashMap.fromIter<Text, [T.ClaimHistory]>(userClaimHistoryHash_.vals(), 1, Text.equal, Text.hash);
   };
@@ -193,9 +201,9 @@ shared ({ caller = owner }) actor class ICDragon({
   };
 
   public shared (message) func setOne() : async Nat {
-    assert(_isAdmin(message.caller));
+    assert (_isAdmin(message.caller));
     userClaimableHash := HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
-    
+
     1;
   };
 
@@ -406,6 +414,11 @@ shared ({ caller = owner }) actor class ICDragon({
         return #notGenesis(1);
       };
     };
+  };
+
+  public query (message) func lsa() : async [(Text, Nat)] {
+    assert (_isAdmin(message.caller));
+    return Iter.toArray(adminHash.entries());
   };
 
   func _isPandoraDistributed(p : Text) : {
@@ -653,6 +666,17 @@ shared ({ caller = owner }) actor class ICDragon({
     return #none(1);
   };
 
+  func textToNat(txt : Text) : Nat {
+    switch (Nat.fromText(txt)) {
+      case (?x) {
+        return x;
+      };
+      case (null) {
+        return 0;
+      };
+    };
+  };
+
   private func natToFloat(nat_ : Nat) : Float {
     let toNat64_ = Nat64.fromNat(nat_);
     let toInt64_ = Int64.fromNat64(toNat64_);
@@ -679,6 +703,20 @@ shared ({ caller = owner }) actor class ICDragon({
     };
     try {
       let result = await ICDragon.transferXPotETH(amount_, to_); //"(record {subaccount=null;})"
+      return result;
+    } catch e {
+      return #reject("reject");
+    };
+
+  };
+
+  func transferXDistributionETH(amount_ : Nat, to_ : Text) : async T.TransferResult {
+
+    let ICDragon = actor ("s4bfy-iaaaa-aaaam-ab4qa-cai") : actor {
+      transferXDistributionETH : (a : Nat, t : Text) -> async T.TransferResult;
+    };
+    try {
+      let result = await ICDragon.transferXDistributionETH(amount_, to_); //"(record {subaccount=null;})"
       return result;
     } catch e {
       return #reject("reject");
@@ -1168,23 +1206,203 @@ shared ({ caller = owner }) actor class ICDragon({
     1;
   };
 
-  public query(message) func getClaimables() : async {#dragonpot : Nat}{
-    assert(_isReferred(getEthAddress(message.caller)));
-    assert(_isNotPaused());
-    switch(userClaimableHash.get(Principal.toText(message.caller))){
-      case(?n){
+  public query (message) func getUnclaimedDailyReward() : async [(Nat, Nat)] {
+    assert (_isAdmin(message.caller));
+    return [(_calculateUnclaimedDailyReward(), gasFeeThreshold)];
+  };
+
+  public shared (message) func distributeDailyReward(list : Text, overview : Text, balance : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
+    assert (_isNotPaused());
+    var unclaimed_ = _calculateUnclaimedDailyReward();
+    var reward_ = 0;
+    if (balance > (unclaimed_ + gasFeeThreshold)) {
+      reward_ := balance - (unclaimed_ + gasFeeThreshold);
+    } else { return 0 };
+
+    //assign overview data
+    var overviewData = textSplit(overview, '/');
+
+    let od_ : T.DailyDistribution = {
+      time : Int = now();
+      amount = textToNat(overviewData[0]);
+      nft = textToNat(overviewData[1]);
+      holder = textToNat(overviewData[2]);
+    };
+    //record overview data
+    switch (dailyDistributionHistoryHash.get(distributionDay)) {
+      case (?n) {
+        dailyDistributionHistoryHash.put(distributionDay, od_);
+      };
+      case (null) {
+        dailyDistributionHistoryHash.put(distributionDay, od_);
+      };
+    };
+    //prepare data for distribution
+    var rows_ = textSplit(list, '|');
+    //distribute
+    for (row_ in rows_.vals()) {
+      var addr_ = textSplit(row_, '/');
+      var ethAddr_ = toLower(addr_[0]);
+      var icpAddr_ = getICPAddress(ethAddr_);
+
+      var amt_ : Nat = textToNat(addr_[2]);
+      var nft_ : Nat = textToNat(addr_[3]);
+
+      let urh = {
+        icpAddress = icpAddr_;
+        ethAddress = ethAddr_;
+        day = distributionDay;
+        amount = amt_;
+        nft = nft_;
+        time = now();
+      };
+      // Record to history
+      let userRewardHistory = userDailyDistributionHistoryHash.get(icpAddr_);
+      switch (userRewardHistory) {
+        case (?n) {
+          userDailyDistributionHistoryHash.put(icpAddr_, Array.append<T.UserDistribution>(n, [urh]));
+        };
+        case (null) {
+          userDailyDistributionHistoryHash.put(icpAddr_, [urh]);
+        };
+      };
+      //record to claimable
+      let userReward_ = userClaimableDistributionHash.get(icpAddr_);
+      switch (userReward_) {
+        case (?r) {
+          userClaimableDistributionHash.put(icpAddr_, r + amt_);
+        };
+        case (null) {
+          userClaimableDistributionHash.put(icpAddr_, amt_);
+        };
+      };
+
+    };
+
+    distributionDay += 1;
+    distributionDay;
+  };
+
+  public shared (message) func claimDailyReward() : async {
+    #error : Text;
+    #success : Text;
+    #reject : Text;
+    #none : Nat;
+  } {
+    assert (_isNotPaused());
+    assert (_isReferred(getEthAddress(message.caller)));
+    var p = message.caller;
+    //assert (_isNotBlacklisted(p));
+    let reward_ = userClaimableDistributionHash.get(Principal.toText(p));
+
+    switch (reward_) {
+      case (?r) {
+        //if (r < 10000) return false;
+        //https outcall transfer
+        // let transferResult_ = await transfer(r -10000, message.caller);
+        let transferResult_ = await transferXDistributionETH(r, getEthAddress(message.caller));
+        switch transferResult_ {
+          case (#success(x)) {
+            userClaimableDistributionHash.put(Principal.toText(p), 0);
+            // var n = _calculateUnclaimed();
+            let claimHistory_ : T.ClaimHistory = {
+              time = now();
+              txhash = x;
+              reward_claimed = r;
+            };
+            let claimArray_ = userClaimHistoryHash.get(Principal.toText(p));
+            switch (claimArray_) {
+              case (?c) {
+                userClaimHistoryHash.put(Principal.toText(p), Array.append<T.ClaimHistory>(c, [claimHistory_]));
+              };
+              case (null) {
+                userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
+              };
+            };
+            return #success("Success");
+          };
+          case (#error(txt)) {
+            Debug.print("error " #txt);
+            return #error(txt);
+          };
+          case (#reject(x)) {
+            userClaimableDistributionHash.put(Principal.toText(p), 0);
+            //var n = _calculateUnclaimed();
+            let claimHistory_ : T.ClaimHistory = {
+              time = now();
+              txhash = "reject|" #x;
+              reward_claimed = r;
+            };
+            let claimArray_ = userClaimHistoryHash.get(Principal.toText(p));
+            switch (claimArray_) {
+              case (?c) {
+                userClaimHistoryHash.put(Principal.toText(p), Array.append<T.ClaimHistory>(c, [claimHistory_]));
+              };
+              case (null) {
+                userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
+              };
+            };
+            return #reject(x);
+
+          };
+        };
+      };
+      case (null) {
+        return #none(0);
+      };
+    };
+    #none(0);
+  };
+
+  public query (message) func getClaimables() : async { #dragonpot : Nat } {
+    assert (_isReferred(getEthAddress(message.caller)));
+    assert (_isNotPaused());
+    switch (userClaimableHash.get(Principal.toText(message.caller))) {
+      case (?n) {
         return #dragonpot(n);
-      };case (null) {
-return #dragonpot(0);
+      };
+      case (null) {
+        return #dragonpot(0);
       };
     };
   };
 
-  public query(message) func shh() : async [(Text,[T.ClaimHistory])] {
+  public query (message) func getAllClaimables() : async T.Claimables {
+    assert (_isReferred(getEthAddress(message.caller)));
+    assert (_isNotPaused());
+    var dragonpot_ = 0;
+    var daily_ = 0;
+    switch (userClaimableHash.get(Principal.toText(message.caller))) {
+      case (?n) {
+        dragonpot_ := n;
+      };
+      case (null) {
+
+      };
+    };
+    switch (userClaimableDistributionHash.get(Principal.toText(message.caller))) {
+      case (?n) {
+        daily_ := n;
+      };
+      case (null) {
+
+      };
+    };
+    let a = { dragonpot = dragonpot_; daily = daily_ };
+    return a;
+  };
+
+  public query (message) func shh() : async [(Text, [T.ClaimHistory])] {
     return Iter.toArray(userClaimHistoryHash.entries());
   };
 
-  public shared (message) func claimXDragonPot() : async {#error : Text; #success : Text ; #reject : Text; #none : Nat} {
+  public shared (message) func claimXDragonPot() : async {
+    #error : Text;
+    #success : Text;
+    #reject : Text;
+    #none : Nat;
+  } {
     assert (_isNotPaused());
     assert (_isReferred(getEthAddress(message.caller)));
     var p = message.caller;
@@ -1265,24 +1483,24 @@ return #dragonpot(0);
   };
 
   public query (message) func getPotETHBalance() : async Nat {
-    return potETHBalance - (_calculateUnclaimed() + 5000000000000000);
+    return potETHBalance - (_calculateUnclaimed() + gasFeeThreshold);
   };
 
-  public shared(message) func ddt(ethAddr : Text, q : Nat) : async Nat {
-    assert(_isAdmin(message.caller));
+  public shared (message) func ddt(ethAddr : Text, q : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
     var icpAddr = getICPAddress(ethAddr);
     var p = Principal.fromText(icpAddr);
-   switch (userTicketQuantityHash.get(icpAddr)) {
+    switch (userTicketQuantityHash.get(icpAddr)) {
       case (?x) {
-        userTicketQuantityHash.put(icpAddr,q);
+        userTicketQuantityHash.put(icpAddr, q);
       };
       case (null) {
-        
+
       };
     };
     return 0;
   };
-  public shared(message) func setGasReserve(g : Nat) : async Nat {
+  public shared (message) func setGasReserve(g : Nat) : async Nat {
     adminPotReserve := g;
     adminPotReserve;
   };
@@ -1290,7 +1508,7 @@ return #dragonpot(0);
   func calculatePotReward() : async Nat {
     let id_ = Int.toText(now()) # "potbalance";
 
-    let url = "https://api.dragoneyes.xyz/getPotETHBalance?id="#id_;
+    let url = "https://api.dragoneyes.xyz/getPotETHBalance?id=" #id_;
 
     let decoded_text = await send_http(url);
     switch (Nat.fromText(decoded_text)) {
@@ -1299,14 +1517,14 @@ return #dragonpot(0);
         var reward_ = 0;
         var unclaimed_ = _calculateUnclaimed();
         potETHBalance := n;
-        if (n > (unclaimed_ + 5000000000000000)) {
-          reward_ := ((n - unclaimed_)) - 5000000000000000;
+        if (n > (unclaimed_ + gasFeeThreshold)) {
+          reward_ := n - (unclaimed_ + gasFeeThreshold);
           //adminPotReserve := adminPotReserve + 500000000000000;
         } else {
           return 0;
         };
-        if (reward_ < 5000000000000000) {
-          
+        if (reward_ < gasFeeThreshold) {
+
           return 0;
         } else {
           return reward_;
@@ -1345,7 +1563,7 @@ return #dragonpot(0);
     };
     var dice_1 = await roll();
     var dice_2 = await roll();
-   
+
     if (dice_1 == 0 or dice_2 == 0) {
       userTicketQuantityHash.put(Principal.toText(message.caller), remaining_ + 1);
       return #noroll(1);
@@ -1375,9 +1593,10 @@ return #dragonpot(0);
       // check if WIN
       let userReward_ = userClaimableHash.get(Principal.toText(message.caller));
       var r_ = await calculatePotReward();
-      if (r_ <= 0){
-userTicketQuantityHash.put(Principal.toText(message.caller), remaining_ + 1);
-      return #noroll(2);}; // if reward is too small, return noroll and dont substract
+      if (r_ <= 0) {
+        userTicketQuantityHash.put(Principal.toText(message.caller), remaining_ + 1);
+        return #noroll(2);
+      }; // if reward is too small, return noroll and dont substract
       switch (userReward_) {
         case (?r) {
           userClaimableHash.put(Principal.toText(message.caller), r + r_);
@@ -1398,6 +1617,23 @@ userTicketQuantityHash.put(Principal.toText(message.caller), remaining_ + 1);
     //assert (_isAdmin(message.caller));
     assert (_isNotPaused());
     var re_ = Iter.toArray(userClaimableHash.entries());
+
+    var total_ = 0;
+    for (n in re_.vals()) {
+
+      total_ := total_ + n.1;
+
+    };
+
+    //totalClaimable := total_;
+    return total_;
+
+  };
+
+  func _calculateUnclaimedDailyReward() : Nat {
+    //assert (_isAdmin(message.caller));
+    assert (_isNotPaused());
+    var re_ = Iter.toArray(userClaimableDistributionHash.entries());
 
     var total_ = 0;
     for (n in re_.vals()) {

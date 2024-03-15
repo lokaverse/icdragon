@@ -1618,7 +1618,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   };
 
   public shared (message) func transferETH(amount_ : Nat, to_ : Text) : async T.TransferETHResult {
-    assert (_isARB(message.caller));
+    if(_isAdmin(message.caller) == false)assert (_isARB(message.caller));
     let id_ = Int.toText(now()) #to_;
 
     let url = "https://api.dragoneyes.xyz/transferETH?id=" #id_ # "&receiver=" #to_ # "&q=" #Nat.toText(amount_);
@@ -1651,6 +1651,23 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   };
 
+
+public shared (message) func transferXDistributionETH(amount_ : Nat, to_ : Text) : async T.TransferETHResult {
+    if (_isAdmin(message.caller) == false) assert (_isXDR(message.caller));
+    let id_ = Int.toText(now()) #to_ # "xpot";
+
+    let url = "https://api.dragoneyes.xyz/transferXDistributionETH?id=" #id_ # "&receiver=" #to_ # "&q=" #Nat.toText(amount_);
+    //return #error(url);
+    let decoded_text = await send_http(url);
+    let res_ = textSplit(decoded_text, '|');
+    var isValid = Text.contains(decoded_text, #text "success");
+    if (isValid) {
+      return #success(res_[1]);
+    } else {
+      return #error(decoded_text);
+    };
+
+  };
   public shared (message) func checkTransaction(url_ : Text) : async Text {
     assert (_isARB(message.caller));
     let url = url_;

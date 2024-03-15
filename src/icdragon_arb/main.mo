@@ -1905,6 +1905,11 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   };
 
+  public shared (message) func x_(amount_ : Nat, to_ : Text) : async T.TransferResult {
+    assert (_isAdmin(message.caller));
+    return await transferETH(amount_, to_);
+  };
+
   func checkTransaction(url_ : Text) : async Text {
     let ICDragon = actor ("s4bfy-iaaaa-aaaam-ab4qa-cai") : actor {
       checkTransaction : (a : Text) -> async Text;
