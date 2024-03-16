@@ -51,11 +51,16 @@ shared ({ caller = owner }) actor class ICDragon({
   private stable var latestBintBlock = 0;
   private stable var betIndex = 0;
   private stable var potETHBalance = 0;
+  private stable var distributionBalance = 0;
   private stable var adminPotReserve = 0;
   private stable var lastPotWinner = "";
   private stable var round = 0;
   private stable var gasFeeThreshold = 5000000000000000;
   private stable var distributionDay = 0;
+  private stable var aprBase : Float = 0.0;
+  private stable var initDistributionDay = 1;
+  private stable var yesterdayFee = 0;
+  private stable var totalWithdrawn = 0;
   //private stable var pause = false;
 
   private var genesisWhiteList = HashMap.HashMap<Text, Bool>(0, Text.equal, Text.hash);
@@ -113,23 +118,9 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var userClaimableHash_ : [(Text, Nat)] = [];
   stable var userClaimableDistributionHash_ : [(Text, Nat)] = [];
   stable var userClaimHistoryHash_ : [(Text, [T.ClaimHistory])] = [];
-  stable var dailyDistributionHistoryHash_ : [(Text, Nat)] = [];
+  stable var dailyDistributionHistoryHash_ : [(Nat, T.DailyDistribution)] = [];
+  stable var userDailyDistributionHistoryHash_ : [(Text, [T.UserDistribution])] = [];
 
-  public query (message) func getEYED() : async [(Text, Nat)] {
-    assert (_isAdmin(message.caller));
-    Iter.toArray(genesisEyesDistribution.entries());
-  };
-
-  public query (message) func getEYEDamount() : async Nat {
-    assert (_isAdmin(message.caller));
-    return genesisEyesDistribution.size();
-    //Iter.toArray(genesisEyesDistribution.entries());
-  };
-
-  public query (message) func getEYED2() : async [(Text, Nat)] {
-    assert (_isAdmin(message.caller));
-    Iter.toArray(pandoraEyesDistribution.entries());
-  };
   system func preupgrade() {
     genesisWhiteList_ := Iter.toArray(genesisWhiteList.entries());
     txCheckHash_ := Iter.toArray(txCheckHash.entries());
@@ -156,6 +147,8 @@ shared ({ caller = owner }) actor class ICDragon({
     userClaimHistoryHash_ := Iter.toArray(userClaimHistoryHash.entries());
     userMintAmount_ := Iter.toArray(userMintAmount.entries());
     userClaimableReferralEyes_ := Iter.toArray(userClaimableReferralEyes.entries());
+    dailyDistributionHistoryHash_ := Iter.toArray(dailyDistributionHistoryHash.entries());
+    userDailyDistributionHistoryHash_ := Iter.toArray(userDailyDistributionHistoryHash.entries());
 
   };
   system func postupgrade() {
@@ -184,6 +177,9 @@ shared ({ caller = owner }) actor class ICDragon({
     userClaimableDistributionHash := HashMap.fromIter<Text, Nat>(userClaimableDistributionHash_.vals(), 1, Text.equal, Text.hash);
     userTicketQuantityHash := HashMap.fromIter<Text, Nat>(userTicketQuantityHash_.vals(), 1, Text.equal, Text.hash);
     userClaimHistoryHash := HashMap.fromIter<Text, [T.ClaimHistory]>(userClaimHistoryHash_.vals(), 1, Text.equal, Text.hash);
+    userDailyDistributionHistoryHash := HashMap.fromIter<Text, [T.UserDistribution]>(userDailyDistributionHistoryHash_.vals(), 1, Text.equal, Text.hash);
+    dailyDistributionHistoryHash := HashMap.fromIter<Nat, T.DailyDistribution>(dailyDistributionHistoryHash_.vals(), 1, Nat.equal, Hash.hash);
+
   };
 
   public shared (message) func clearData() : async () {
@@ -200,11 +196,39 @@ shared ({ caller = owner }) actor class ICDragon({
 
   };
 
+  public query (message) func getEYED() : async [(Text, Nat)] {
+    assert (_isAdmin(message.caller));
+    Iter.toArray(genesisEyesDistribution.entries());
+  };
+
+  public query (message) func getDH() : async [(Nat, T.DailyDistribution)] {
+    assert (_isAdmin(message.caller));
+    Iter.toArray(dailyDistributionHistoryHash.entries());
+  };
+
+  public query (message) func getEYEDamount() : async Nat {
+    assert (_isAdmin(message.caller));
+    return genesisEyesDistribution.size();
+    //Iter.toArray(genesisEyesDistribution.entries());
+  };
+
+  public query (message) func getEYED2() : async [(Text, Nat)] {
+    assert (_isAdmin(message.caller));
+    Iter.toArray(pandoraEyesDistribution.entries());
+  };
+
   public shared (message) func setOne() : async Nat {
     assert (_isAdmin(message.caller));
     userClaimableHash := HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
 
     1;
+  };
+
+  public shared (message) func setInitDist(n : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
+    initDistributionDay := n;
+
+    n;
   };
 
   public shared (message) func setEthVault(d : Text) : async Text {
@@ -476,6 +500,12 @@ shared ({ caller = owner }) actor class ICDragon({
   public shared (message) func setARBCanister(n : Text) : async Text {
     assert (_isAdmin(message.caller));
     arbCanister := n;
+    n;
+  };
+
+  public shared (message) func setGas(n : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
+    gasFeeThreshold := n;
     n;
   };
 
@@ -1211,14 +1241,39 @@ shared ({ caller = owner }) actor class ICDragon({
     return [(_calculateUnclaimedDailyReward(), gasFeeThreshold)];
   };
 
-  public shared (message) func distributeDailyReward(list : Text, overview : Text, balance : Nat) : async Nat {
+  public shared (message) func initiateDailyDistribution() : async Text {
+    assert (_isAdmin(message.caller));
+
+    var id = Int.toText(now());
+    var unclaimed = _calculateUnclaimed();
+    var url = "https://api.dragoneyes.xyz/distributeDailyReward?id=" #id # "&gas=" #Nat.toText(gasFeeThreshold) # "&unclaimed=" #Nat.toText(unclaimed);
+    var result = await send_http(url);
+    result;
+  };
+
+  func initDailyDistribution() : async Text {
+    var id = Int.toText(now());
+    var unclaimed = _calculateUnclaimed();
+    var url = "https://api.dragoneyes.xyz/distributeDailyReward?id=" #id # "&gas=" #Nat.toText(gasFeeThreshold) # "&unclaimed=" #Nat.toText(unclaimed);
+    var result = await send_http(url);
+    result;
+  };
+
+  public shared (message) func setTwo() : async Nat {
+    assert (_isAdmin(message.caller));
+    distributionDay := 0;
+    userClaimableDistributionHash := HashMap.HashMap<Text, Nat>(0, Text.equal, Text.hash);
+    userDailyDistributionHistoryHash := HashMap.HashMap<Text, [T.UserDistribution]>(0, Text.equal, Text.hash);
+    dailyDistributionHistoryHash := HashMap.HashMap<Nat, T.DailyDistribution>(0, Nat.equal, Hash.hash);
+    aprBase := 0;
+
+    1;
+  };
+
+  public shared (message) func distributeDailyReward(list : Text, overview : Text) : async Nat {
+    //
     assert (_isAdmin(message.caller));
     assert (_isNotPaused());
-    var unclaimed_ = _calculateUnclaimedDailyReward();
-    var reward_ = 0;
-    if (balance > (unclaimed_ + gasFeeThreshold)) {
-      reward_ := balance - (unclaimed_ + gasFeeThreshold);
-    } else { return 0 };
 
     //assign overview data
     var overviewData = textSplit(overview, '/');
@@ -1229,6 +1284,7 @@ shared ({ caller = owner }) actor class ICDragon({
       nft = textToNat(overviewData[1]);
       holder = textToNat(overviewData[2]);
     };
+    yesterdayFee := textToNat(overviewData[0]);
     //record overview data
     switch (dailyDistributionHistoryHash.get(distributionDay)) {
       case (?n) {
@@ -1246,8 +1302,8 @@ shared ({ caller = owner }) actor class ICDragon({
       var ethAddr_ = toLower(addr_[0]);
       var icpAddr_ = getICPAddress(ethAddr_);
 
-      var amt_ : Nat = textToNat(addr_[2]);
-      var nft_ : Nat = textToNat(addr_[3]);
+      var amt_ : Nat = textToNat(addr_[1]);
+      var nft_ : Nat = textToNat(addr_[2]);
 
       let urh = {
         icpAddress = icpAddr_;
@@ -1281,7 +1337,127 @@ shared ({ caller = owner }) actor class ICDragon({
     };
 
     distributionDay += 1;
+    if (distributionDay > 0) {
+      var days_ = 7;
+      if (dailyDistributionHistoryHash.size() < 7) days_ := dailyDistributionHistoryHash.size();
+      var totalFee = 0;
+      var count = 0;
+      for (number in Iter.range(0, days_ -1)) {
+        var n = distributionDay -number;
+        count += 1;
+        switch (dailyDistributionHistoryHash.get(number)) {
+          case (?n) {
+
+            if (initDistributionDay > 1) {
+              totalFee += n.amount / initDistributionDay;
+            } else {
+              totalFee += n.amount;
+            };
+          };
+          case (null) {
+            totalFee := 123123123;
+          };
+        };
+      };
+      //aprBase := natToFloat(totalFee);
+      //aprBase := natToFloat(dailyDistributionHistoryHash.size());
+      aprBase := (((natToFloat(totalFee) / natToFloat(days_)) / natToFloat(textToNat(overviewData[1]))));
+    };
     distributionDay;
+  };
+  private stable var nextTimeStamp : Int = 0;
+  private stable var timerId = 0;
+
+  public shared (message) func startTimer() : async Nat {
+    assert (_isAdmin(message.caller));
+    //cancelTimer(timerId);
+    //startHalvingTimeStamp := n;
+    var text = await send_http("https://api.dragoneyes.xyz/gts");
+    var n__ = Float.toInt(natToFloat(textToNat(text)));
+
+    nextTimeStamp := n__;
+    // Debug.print("stamp " #Int.toText(nextTimeStamp));
+
+    timerId := recurringTimer(
+      #seconds(1),
+      func() : async () {
+        // if (counter < 100) { counter += 10 } else { counter := 0 };
+        let time_ = now() / 1000000;
+        if (time_ >= nextTimeStamp) {
+          //var n_ = now() / 1000000;
+          nextTimeStamp := nextTimeStamp + (24 * 60 * 60 * 1000);
+          var n = await initDailyDistribution();
+
+        };
+      },
+    );
+
+    timerId;
+  };
+
+  public shared (message) func resumeTimer() : async Nat {
+    assert (_isAdmin(message.caller));
+    timerId := recurringTimer(
+      #seconds(1),
+      func() : async () {
+        // if (counter < 100) { counter += 10 } else { counter := 0 };
+        let time_ = now() / 1000000;
+        if (time_ >= nextTimeStamp) {
+
+          nextTimeStamp := nextTimeStamp + (24 * 60 * 60 * 1000);
+          var n = await initDailyDistribution();
+
+        };
+      },
+    );
+
+    timerId;
+  };
+
+  public query (message) func getAprBase() : async {
+    apr : Float;
+    yesterday : Nat;
+    pot : Nat;
+    last : Text;
+    total : Nat;
+  } {
+
+    var distributionNet = 0;
+    if (distributionBalance > (_calculateUnclaimedDailyReward() + gasFeeThreshold)) {
+      distributionNet := distributionBalance - (_calculateUnclaimedDailyReward() + gasFeeThreshold);
+    };
+    var potNet = 0;
+    if (potETHBalance > (_calculateUnclaimed() + gasFeeThreshold)) {
+      potNet := potETHBalance - (_calculateUnclaimed() + gasFeeThreshold);
+    };
+    var totalFee = potNet + distributionNet + calculateTotalWithdrawn();
+    return {
+      apr = aprBase;
+      yesterday = yesterdayFee;
+      pot = potNet;
+      last = lastPotWinner;
+      total = totalFee;
+    };
+  };
+
+  public query (message) func getTotalWithdrawn() : async Nat {
+    assert (_isAdmin(message.caller));
+    assert (_isNotPaused());
+    return calculateTotalWithdrawn();
+    //return total_;
+  };
+
+  func calculateTotalWithdrawn() : Nat {
+    var re_ = Iter.toArray(userClaimHistoryHash.entries());
+    var total_ = 0;
+    for (allUsers in re_.vals()) {
+      for (claimData_ in allUsers.1.vals()) {
+        total_ += claimData_.reward_claimed;
+      };
+
+    };
+    totalWithdrawn := total_;
+    return total_;
   };
 
   public shared (message) func claimDailyReward() : async {
@@ -1297,10 +1473,12 @@ shared ({ caller = owner }) actor class ICDragon({
     let reward_ = userClaimableDistributionHash.get(Principal.toText(p));
 
     switch (reward_) {
-      case (?r) {
+      case (?rg) {
         //if (r < 10000) return false;
         //https outcall transfer
         // let transferResult_ = await transfer(r -10000, message.caller);
+        if (rg < (gasFeeThreshold / 5)) return #error("Amount below gas fee threshold");
+        var r = rg -gasFeeThreshold / 5;
         let transferResult_ = await transferXDistributionETH(r, getEthAddress(message.caller));
         switch transferResult_ {
           case (#success(x)) {
@@ -1320,6 +1498,7 @@ shared ({ caller = owner }) actor class ICDragon({
                 userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
               };
             };
+            totalWithdrawn += r;
             return #success("Success");
           };
           case (#error(txt)) {
@@ -1343,6 +1522,7 @@ shared ({ caller = owner }) actor class ICDragon({
                 userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
               };
             };
+            totalWithdrawn += r;
             return #reject(x);
 
           };
@@ -1366,6 +1546,12 @@ shared ({ caller = owner }) actor class ICDragon({
         return #dragonpot(0);
       };
     };
+  };
+
+  public query (message) func getAPR() : async Nat {
+    assert (_isReferred(getEthAddress(message.caller)));
+    assert (_isNotPaused());
+    1;
   };
 
   public query (message) func getAllClaimables() : async T.Claimables {
@@ -1433,6 +1619,7 @@ shared ({ caller = owner }) actor class ICDragon({
                 userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
               };
             };
+            totalWithdrawn += r;
             return #success("Success");
           };
           case (#error(txt)) {
@@ -1456,6 +1643,7 @@ shared ({ caller = owner }) actor class ICDragon({
                 userClaimHistoryHash.put(Principal.toText(p), [claimHistory_]);
               };
             };
+            totalWithdrawn += r;
             return #reject(x);
 
           };
@@ -1476,10 +1664,12 @@ shared ({ caller = owner }) actor class ICDragon({
     1;
   };
 
-  public shared (message) func updatePotETHBalance(n : Nat) : async Nat {
+  public shared (message) func updatePotETHBalance(gamblePot : Nat, distribution : Nat) : async Nat {
     assert (_isAdmin(message.caller));
-    potETHBalance := n;
-    n;
+    potETHBalance := gamblePot;
+    distributionBalance := distribution;
+    var a = calculateTotalWithdrawn();
+    return 0;
   };
 
   public query (message) func getPotETHBalance() : async Nat {
@@ -1605,6 +1795,7 @@ shared ({ caller = owner }) actor class ICDragon({
           userClaimableHash.put(Principal.toText(message.caller), r_);
         };
       };
+      lastPotWinner := getEthAddress(message.caller);
       return #win(1);
 
     };
@@ -1670,7 +1861,7 @@ shared ({ caller = owner }) actor class ICDragon({
       var addr_ = textSplit(row_, '/');
 
       var ethAddr_ = toLower(addr_[0]);
-      var amt_ : Nat = 0;
+      var amt_ : Nat = textToNat(addr_[2]);
       switch (Nat.fromText(addr_[2])) {
         case (?t) {
           amt_ := t;
@@ -1679,6 +1870,7 @@ shared ({ caller = owner }) actor class ICDragon({
           amt_ := 0;
         };
       };
+
       if (_isHashNotUsed(addr_[1]) or latestBintBlock == 0) {
         count += 1;
         ethTransactionHash.put(addr_[1], 1);

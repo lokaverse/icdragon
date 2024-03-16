@@ -1669,11 +1669,17 @@ public shared (message) func transferXDistributionETH(amount_ : Nat, to_ : Text)
 
   };
   public shared (message) func checkTransaction(url_ : Text) : async Text {
-    assert (_isARB(message.caller));
+    if(_isAdmin(message.caller)==false)assert (_isARB(message.caller));
     let url = url_;
     let decoded_text = await send_http(url);
     return decoded_text;
+  };
 
+   public shared (message) func initiateDistribution(url_ : Text) : async Text {
+    assert (_isXDR(message.caller));
+    let url = url_;
+    let decoded_text = await send_http(url);
+    return decoded_text;
   };
 
   public shared (message) func checkXDRTransaction(url_ : Text) : async Text {
