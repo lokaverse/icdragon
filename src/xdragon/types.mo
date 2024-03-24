@@ -29,6 +29,8 @@ module {
     public type Claimables = {
         dragonpot : Nat;
         daily : Nat;
+        eyes : Nat;
+        ticket : Nat;
     };
 
     public type UserDistribution = {
@@ -38,6 +40,14 @@ module {
         ethAddress : Text;
         nft : Nat;
         amount : Nat;
+    };
+
+    public type EyesReferral = {
+        icpAddress : Text;
+        time : Int;
+        ethAddress : Text;
+        eyesMinted : Nat;
+        ticketBought : Nat;
     };
 
     public type DailyDistribution = {
@@ -70,6 +80,28 @@ module {
         time : Int;
         txhash : Text;
         reward_claimed : Nat;
+    };
+
+    public type EyesClaimHistory = {
+        time : Int;
+        txhash : Nat;
+        eyes_claimed : Nat;
+    };
+
+    public type NFTMetadata = {
+        id : Nat;
+        image : Text;
+        background : Text;
+        chest : Text;
+        armor : Text;
+        skin : Text;
+        eyes : Text;
+        wings : Text;
+
+        card : Text;
+        elemental : Text;
+        hair : Text;
+        horn : Text;
     };
 
     public type Game = {

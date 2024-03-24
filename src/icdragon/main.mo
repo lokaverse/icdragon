@@ -1066,6 +1066,16 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
     true;
   };
 
+  public shared (message) func notifyXPotDiscord(msg : Text) : async Bool {
+    assert (_isXDR(message.caller));
+    let id_ = Int.toText(now()) # "xpot";
+    let message_ = Text.replace(msg, #char ' ', "%20");
+    let url = "https://api.dragoneyes.xyz/sendXPotDiscord?id=" #id_ # "&message=" #message_;
+
+    let decoded_text = await send_http(url);
+    true;
+  };
+
   public shared (message) func initialEyesTokenCheck() : async Nat {
     assert (_isNotPaused());
     /* var p = getAlias(message.caller);
@@ -1618,7 +1628,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
   };
 
   public shared (message) func transferETH(amount_ : Nat, to_ : Text) : async T.TransferETHResult {
-    if(_isAdmin(message.caller) == false)assert (_isARB(message.caller));
+    if (_isAdmin(message.caller) == false) assert (_isARB(message.caller));
     let id_ = Int.toText(now()) #to_;
 
     let url = "https://api.dragoneyes.xyz/transferETH?id=" #id_ # "&receiver=" #to_ # "&q=" #Nat.toText(amount_);
@@ -1651,8 +1661,7 @@ private var userTicketQuantityHash = HashMap.HashMap<Text, Nat>(0, Text.equal, T
 
   };
 
-
-public shared (message) func transferXDistributionETH(amount_ : Nat, to_ : Text) : async T.TransferETHResult {
+  public shared (message) func transferXDistributionETH(amount_ : Nat, to_ : Text) : async T.TransferETHResult {
     if (_isAdmin(message.caller) == false) assert (_isXDR(message.caller));
     let id_ = Int.toText(now()) #to_ # "xpot";
 
@@ -1669,13 +1678,13 @@ public shared (message) func transferXDistributionETH(amount_ : Nat, to_ : Text)
 
   };
   public shared (message) func checkTransaction(url_ : Text) : async Text {
-    if(_isAdmin(message.caller)==false)assert (_isARB(message.caller));
+    if (_isAdmin(message.caller) == false) assert (_isARB(message.caller));
     let url = url_;
     let decoded_text = await send_http(url);
     return decoded_text;
   };
 
-   public shared (message) func initiateDistribution(url_ : Text) : async Text {
+  public shared (message) func initiateDistribution(url_ : Text) : async Text {
     assert (_isXDR(message.caller));
     let url = url_;
     let decoded_text = await send_http(url);

@@ -1442,7 +1442,7 @@ shared ({ caller = owner }) actor class ICDragon({
     var unusedHash_ = Iter.toArray(unusedMetadataHash.entries());
     var metadata = unusedHash_[metadataIndex];
     nftHash.put(tokenId, metadata.1);
-    //unusedMetadataHash.delete(metadata.1); // COMMENTED OUT FOR TESTING PURPOSE
+    //unusedMetadataHash.delete(metadata.1);
     metadata.1;
 
   };
@@ -1513,14 +1513,12 @@ shared ({ caller = owner }) actor class ICDragon({
     latestMetadataBintBlock := lb_mint;
     latestMetadataMurnBlock := lb_burn;
     var nftMurnTemp = HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
-    var murnt = 0;
-    var binted = 0;
+
     var murnIds_ = textSplit(murn, '|');
     //remove all metadata from burnt token
     for (id_ in murnIds_.vals()) {
       var nftId_ = textToNat(id_);
       nftMurnTemp.put(nftId_, nftId_);
-      murnt += 1;
       var res = removeMetadata(nftId_);
     };
 
@@ -1540,7 +1538,6 @@ shared ({ caller = owner }) actor class ICDragon({
             };
             case (null) {
               var res = await setMetadata(nftId_);
-              binted += 1;
             };
           };
         };

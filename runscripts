@@ -1,6 +1,13 @@
 dfx deploy xdragon --argument '(record{admin = principal "2zosz-ithna-3dqa4-crx3i-2gy7e-o3rkp-fa6wk-mczsu-3h7bi-poiym-hae"})' --network ic
 
+dfx canister call xdragon startTimer --network ic
+
+
 dfx deploy icdragon_arb --argument '(record{admin = principal "2zosz-ithna-3dqa4-crx3i-2gy7e-o3rkp-fa6wk-mczsu-3h7bi-poiym-hae"})' --network ic
+
+
+dfx canister status icdragon --network ic
+dfx canister call icdragon resumeHalving --network ic
 
 
 dfx canister call  icdragon getCurrentThreshold --network ic
@@ -10,3 +17,8 @@ dfx canister call  icdragon_arb getCurrentThreshold --network ic
 dfx deploy icdragon --argument '(record{admin = principal "2zosz-ithna-3dqa4-crx3i-2gy7e-o3rkp-fa6wk-mczsu-3h7bi-poiym-hae"})' --network ic
 
 dfx canister call icdragon checkTransaction '("https://api.dragoneyes.xyz/checktransactionhash?id=asd26178&hash=0x2b0aceb55ff1b6086ad6fe14dd04f7e87ca0ed01b02d3ab87360f5203ff49161&sender=0xdba416A48278054b9e81dff7b5f544d3d5650278&receiver=0x95eb7ec144bf5a8563ff613a79d72c09edc3ecc6&q=10000000000000000")' --network ic                      
+
+
+init metadata :
+export value="$(cat nftbatch.txt)"  
+export param=\'(\"${value}\")\'
