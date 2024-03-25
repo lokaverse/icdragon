@@ -20,5 +20,6 @@ dfx canister call icdragon checkTransaction '("https://api.dragoneyes.xyz/checkt
 
 
 init metadata :
-export value="$(cat nftbatch.txt)"  
+export value="$(cat allmetadata.txt)"  
 export param=\'(\"${value}\")\'
+dfx canister call xdragon initBatchMetadata $param --network ic

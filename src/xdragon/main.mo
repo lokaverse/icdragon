@@ -1446,27 +1446,30 @@ shared ({ caller = owner }) actor class ICDragon({
     metadata.1;
 
   };
+  private stable var  nftMetadataIndex = 0;
 
-  public shared (message) func initBatchMetadata(tokenList : Text) : async Nat {
+  //public query(message) func getMetada
+  public shared (message) func initBatchMetadata(tokenList : [Text]) : async Nat {
     assert (_isAdmin(message.caller));
+    //return tokenList.size();
     unusedMetadataHash := HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
-    var data = textSplit(tokenList, '|');
-    var nftIdx = 0;
-    for (row_ in data.vals()) {
+    //var data = textSplit(tokenList, '|');
+    
+    for (row_ in tokenList.vals()) {
       var nftData = textSplit(row_, '/');
-      var image_ = toLower(nftData[0]);
-      var background_ = toLower(nftData[1]);
-      var wings_ = toLower(nftData[2]);
-      var hair_ = toLower(nftData[3]);
-      var skin_ = toLower(nftData[4]);
-      var eyes_ = toLower(nftData[5]);
-      var horn_ = toLower(nftData[6]);
-      var armor_ = toLower(nftData[7]);
-      var chest_ = toLower(nftData[8]);
-      var elemental_ = toLower(nftData[9]);
-      var card_ = toLower(nftData[10]);
+      var image_ = (nftData[0]);
+      var background_ = (nftData[1]);
+      var wings_ = (nftData[2]);
+      var hair_ = (nftData[3]);
+      var skin_ = (nftData[4]);
+      var eyes_ = (nftData[5]);
+      var horn_ = (nftData[6]);
+      var armor_ = (nftData[7]);
+      var chest_ = (nftData[8]);
+      var elemental_ = (nftData[9]);
+      var card_ = (nftData[10]);
       let nft_ : T.NFTMetadata = {
-        id = nftIdx;
+        id = nftMetadataIndex;
         image = image_;
         background = background_;
         wings = wings_;
@@ -1479,9 +1482,9 @@ shared ({ caller = owner }) actor class ICDragon({
         elemental = elemental_;
         card = card_;
       };
-      metadataHash.put(nftIdx, nft_);
-      unusedMetadataHash.put(nftIdx, nftIdx);
-      nftIdx += 1;
+      metadataHash.put(nftMetadataIndex, nft_);
+      unusedMetadataHash.put(nftMetadataIndex, nftMetadataIndex);
+      nftMetadataIndex += 1;
     };
 
     metadataHash.size();
@@ -1554,6 +1557,7 @@ shared ({ caller = owner }) actor class ICDragon({
     unusedMetadataHash := HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
     metadataHash := HashMap.HashMap<Nat, T.NFTMetadata>(0, Nat.equal, Hash.hash);
     nftHash := HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
+    nftMetadataIndex :=0;
     metadataHash.size();
   };
 
