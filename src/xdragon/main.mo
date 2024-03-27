@@ -100,6 +100,7 @@ shared ({ caller = owner }) actor class ICDragon({
   private var nftHash = HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
   private var metadataHash = HashMap.HashMap<Nat, T.NFTMetadata>(0, Nat.equal, Hash.hash);
   private var unusedMetadataHash = HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
+  private var dragonSummonHash = HashMap.HashMap<Nat, Text>(0, Nat.equal, Hash.hash);
 
   //stable var transactionHash
 
@@ -137,6 +138,8 @@ shared ({ caller = owner }) actor class ICDragon({
   stable var nftHash_ : [(Nat, Nat)] = [];
   stable var metadataHash_ : [(Nat, T.NFTMetadata)] = [];
   stable var unusedMetadataHash_ : [(Nat, Nat)] = [];
+  stable var unusedMetadataHashBackup_ : [(Nat, Nat)] = [];
+  stable var dragonSummonHash_ : [(Nat, Text)] = [];
 
   system func preupgrade() {
     genesisWhiteList_ := Iter.toArray(genesisWhiteList.entries());
@@ -175,10 +178,12 @@ shared ({ caller = owner }) actor class ICDragon({
     nftHash_ := Iter.toArray(nftHash.entries());
     metadataHash_ := Iter.toArray(metadataHash.entries());
     unusedMetadataHash_ := Iter.toArray(unusedMetadataHash.entries());
+    dragonSummonHash_ := Iter.toArray(dragonSummonHash.entries());
     isTimerStarted := false;
 
   };
   system func postupgrade() {
+    isProcessing := false;
     genesisWhiteList := HashMap.fromIter<Text, Bool>(genesisWhiteList_.vals(), 1, Text.equal, Text.hash);
     mintingTxHash := HashMap.fromIter<Text, T.MintingHash>(mintingTxHash_.vals(), 1, Text.equal, Text.hash);
     userMintingTxHash := HashMap.fromIter<Text, [Text]>(userMintingTxHash_.vals(), 1, Text.equal, Text.hash);
@@ -215,6 +220,8 @@ shared ({ caller = owner }) actor class ICDragon({
     nftHash := HashMap.fromIter<Nat, Nat>(nftHash_.vals(), 1, Nat.equal, Hash.hash);
     metadataHash := HashMap.fromIter<Nat, T.NFTMetadata>(metadataHash_.vals(), 1, Nat.equal, Hash.hash);
     unusedMetadataHash := HashMap.fromIter<Nat, Nat>(unusedMetadataHash_.vals(), 1, Nat.equal, Hash.hash);
+    dragonSummonHash := HashMap.fromIter<Nat, Text>(dragonSummonHash_.vals(), 1, Nat.equal, Hash.hash);
+
   };
 
   public shared (message) func clearData() : async () {
@@ -1401,6 +1408,44 @@ shared ({ caller = owner }) actor class ICDragon({
 
   ////////////NFT FUNCTIONS | nftfunc///////////////////////////////////////////////////////////
 
+  /*public shared (message) func eC() : async Nat {
+    assert (_isAdmin(message.caller));
+    var re_ = Iter.toArray(metadataHash.entries());
+    var total_ = 0;
+    for (metas in re_.vals()) {
+
+      if (metas.1.skin == "Crystal") {
+        total_ += 1;
+        var el = "";
+        if (metas.1.elemental == "Ice Dragon") {
+          el := "Crystal Dragon";
+        };
+        if (metas.1.elemental == "Absolute Zero Dragon") {
+          el := "Cosmic Diamond Dragon";
+        };
+        let nft_ : T.NFTMetadata = {
+          id = metas.1.id;
+          image = metas.1.image;
+          background = metas.1.background;
+          wings = metas.1.wings;
+          hair = metas.1.hair;
+          skin = metas.1.skin;
+          eyes = metas.1.eyes;
+          horn = metas.1.horn;
+          armor = metas.1.armor;
+          chest = metas.1.chest;
+          elemental = el;
+          card = metas.1.card;
+        };
+        metadataHash.put(metas.1.id, nft_);
+
+      };
+
+    };
+    total_;
+
+  }; */
+
   func getRandomizedNFTMetadata() : async Nat {
     var count_ = 0;
     var check : Nat8 = 0;
@@ -1436,17 +1481,76 @@ shared ({ caller = owner }) actor class ICDragon({
     };
     #none(0);
   };
+
+  public shared (message) func fetchSummoned() : async [(Nat, Text)] {
+
+    //var ad = HashMap.HashMap<Nat, Text>(0, Nat.equal, Hash.hash);
+    //ad.put(1, "joker_1");
+    var a = Iter.toArray(dragonSummonHash.entries());
+    //var a = Iter.toArray(ad.entries());
+    dragonSummonHash := HashMap.HashMap<Nat, Text>(0, Nat.equal, Hash.hash);
+    return a;
+  };
+
+  /*func cidx1(id : Nat) : async Nat {
+
+    var b = Iter.toArray(nftHash.entries());
+    var c = Iter.toArray(nftHash.entries());
+    var tt = 0;
+    switch (nftHash.get(id)) {
+      case (?f) {
+        var usedToken = id;
+        for (check in c.vals()) {
+          if (check.0 != id) {
+            if (check.1 == f) {
+              var n = await setMetadata(check.0);
+              tt += 1;
+            };
+          };
+        };
+      };
+      case (null) {
+
+      };
+    };
+    tt;
+  }; */
+
+  /*public shared (message) func cidx(id : Nat) : async Nat {
+    assert (_isAdmin(message.caller));
+
+    var c = Iter.toArray(nftHash.entries());
+    var tt = 0;
+
+    for (check in c.vals()) {
+      var a = await cidx1(check.0);
+      if (a == 1) tt += 1;
+    };
+
+    tt;
+  }; */
+
   //function to pair a newly binted token to available metadata, chosen randomly by ICP randomizer
   func setMetadata(tokenId : Nat) : async Nat {
     var metadataIndex = await getRandomizedNFTMetadata();
     var unusedHash_ = Iter.toArray(unusedMetadataHash.entries());
     var metadata = unusedHash_[metadataIndex];
     nftHash.put(tokenId, metadata.1);
-    //unusedMetadataHash.delete(metadata.1); // COMMENTED OUT FOR TESTING PURPOSE
+    switch (metadataHash.get(metadata.1)) {
+      case (?g) {
+        dragonSummonHash.put(tokenId, g.image);
+      };
+      case (null) {
+
+      };
+    };
+
+    unusedMetadataHash.delete(metadata.1); // COMMENTED OUT FOR TESTING PURPOSE
     metadata.1;
 
   };
-  private stable var  nftMetadataIndex = 0;
+
+  private stable var nftMetadataIndex = 0;
 
   //public query(message) func getMetada
   public shared (message) func initBatchMetadata(tokenList : [Text]) : async Nat {
@@ -1454,7 +1558,7 @@ shared ({ caller = owner }) actor class ICDragon({
     //return tokenList.size();
     unusedMetadataHash := HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
     //var data = textSplit(tokenList, '|');
-    
+
     for (row_ in tokenList.vals()) {
       var nftData = textSplit(row_, '/');
       var image_ = (nftData[0]);
@@ -1486,6 +1590,7 @@ shared ({ caller = owner }) actor class ICDragon({
       unusedMetadataHash.put(nftMetadataIndex, nftMetadataIndex);
       nftMetadataIndex += 1;
     };
+    unusedMetadataHashBackup_ := Iter.toArray(unusedMetadataHash.entries());
 
     metadataHash.size();
 
@@ -1508,11 +1613,30 @@ shared ({ caller = owner }) actor class ICDragon({
   };
 
   public query (message) func gNFT() : async [(Nat, Nat)] {
+    assert (_isAdmin(message.caller));
     return Iter.toArray(nftHash.entries());
   };
+  public query (message) func gNFTS() : async Nat {
+    assert (_isAdmin(message.caller));
+    return nftHash.size();
+  };
+  private stable var isProcessing = false;
 
+  public query (message) func isStillProcessing() : async Nat {
+    assert (_isAdmin(message.caller));
+    if (isProcessing) return 1;
+    return 0;
+  };
+
+  public shared (message) func setProcessing() : async Nat {
+    assert (_isAdmin(message.caller));
+    isProcessing := false;
+    return 0;
+  };
   public shared (message) func updateMetadata(bint : Text, murn : Text, lb_mint : Nat, lb_burn : Nat) : async Nat {
     assert (_isAdmin(message.caller));
+    assert (isStillProcessing == false);
+    isProcessing := true;
     latestMetadataBintBlock := lb_mint;
     latestMetadataMurnBlock := lb_burn;
     var nftMurnTemp = HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
@@ -1549,17 +1673,30 @@ shared ({ caller = owner }) actor class ICDragon({
         };
       };
     };
+    isProcessing := false;
     1;
   };
 
-  public shared (message) func cNFT() : async Nat {
+  /* public shared (message) func cNFT() : async Nat {
     assert (_isAdmin(message.caller));
     unusedMetadataHash := HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
     metadataHash := HashMap.HashMap<Nat, T.NFTMetadata>(0, Nat.equal, Hash.hash);
     nftHash := HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
+    latestMetadataBintBlock := 0;
+    latestMetadataMurnBlock := 0;
     nftMetadataIndex :=0;
     metadataHash.size();
-  };
+  }; */
+
+  /*public shared (message) func cMapping() : async Nat {
+    assert (_isAdmin(message.caller));
+    unusedMetadataHash := HashMap.fromIter<Nat, Nat>(unusedMetadataHashBackup_.vals(), 1, Nat.equal, Hash.hash);
+    nftHash := HashMap.HashMap<Nat, Nat>(0, Nat.equal, Hash.hash);
+    latestMetadataBintBlock := 0;
+    latestMetadataMurnBlock := 0;
+    nftMetadataIndex :=0;
+    metadataHash.size();
+  }; */
 
   public query (message) func getAllMetadata() : async [(Nat, T.NFTMetadata)] {
     assert (_isAdmin(message.caller));
